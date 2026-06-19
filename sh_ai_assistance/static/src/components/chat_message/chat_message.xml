@@ -1,0 +1,259 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="sh_ai_assistance.ChatMessageTemplate">
+        <!-- Clean modern chat message -->
+        <div class="ai-chat-message" t-att-class="props.message.message_type + '-message'">
+            <!-- Avatar -->
+            <img class="ai-message-avatar"
+                 t-att-src="avatarUrl"
+                 t-att-alt="authorName"/>
+
+            <!-- Content -->
+            <div class="ai-message-content">
+                <!-- Header with name and time -->
+                <div class="ai-message-header">
+                    <span class="ai-message-author" t-esc="authorName"/>
+                    <t t-if="props.message.message_type === 'user' and props.message.sh_is_cancelled">
+                         <span class="badge rounded-pill bg-danger ms-2" style="font-size: 9px; opacity: 0.7;">Cancelled</span>
+                    </t>
+                    <span class="ai-message-time" t-att-title="fullTimestamp">
+                        <t t-esc="formattedTime"/>
+                    </span>
+                    <t t-if="reasoningEffortLabel">
+                        <span class="ai-message-reasoning ms-2" t-att-title="'Reasoning Effort: ' + reasoningEffortLabel" style="font-size: 10px; color: #6366F1; opacity: 0.8; font-weight: 500;">
+                            <i class="fa fa-lightbulb-o me-1"/>
+                            <t t-esc="reasoningEffortLabel"/>
+                        </span>
+                    </t>
+                </div>
+
+                <!-- Clean message bubble -->
+                <div class="ai-message-bubble">
+                    <t t-if="props.message.message_type === 'assistant'">
+                        <div t-out="richContent"/>
+
+                        <t t-if="hasEvidence">
+                            <div class="ai-evidence-strip mt-2">
+                                <span t-foreach="evidenceItems" t-as="item" t-key="item" class="ai-evidence-chip" t-esc="item"/>
+                            </div>
+                        </t>
+
+                        <t t-if="hasWriteRequest">
+                            <div class="ai-write-request-card mt-3">
+                                <div class="ai-write-request-header">
+                                    <div>
+                                        <div class="ai-write-request-title" t-esc="writeRequestTitle"/>
+                                        <div class="ai-write-request-subtitle" t-esc="writeRequestSummary"/>
+                                    </div>
+                                    <span class="ai-write-request-state" t-att-class="'is-' + (writeRequest.state || 'pending')" t-esc="writeRequestStateLabel"/>
+                                </div>
+
+                                <t t-if="writeRiskBadges.length">
+                                    <div class="ai-write-badge-row mt-2">
+                                        <span t-foreach="writeRiskBadges" t-as="badge" t-key="badge.code" class="ai-write-badge" t-esc="badge.label"/>
+                                    </div>
+                                </t>
+
+                                <t t-if="writeFieldDiffs.length">
+                                    <div class="ai-write-diff-list mt-3">
+                                        <div t-foreach="writeFieldDiffs" t-as="diff" t-key="diff.field" class="ai-write-diff-item">
+                                            <div class="ai-write-diff-label" t-esc="diff.label"/>
+                                            <div class="ai-write-diff-before">
+                                                <span class="text-muted">Before:</span>
+                                                <span t-esc="diff.before_summary"/>
+                                            </div>
+                                            <div class="ai-write-diff-after">
+                                                <span class="text-muted">After:</span>
+                                                <span t-esc="diff.after_summary"/>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </t>
+
+                                <t t-if="writeSampleRecords.length">
+                                    <div class="ai-write-sample-list mt-3">
+                                        <div t-foreach="writeSampleRecords" t-as="sample" t-key="sample.id or sample.display_name" class="ai-write-sample-item">
+                                            <div class="ai-write-sample-title" t-esc="sample.display_name"/>
+                                            <t t-if="sample.before">
+                                                <div class="ai-write-sample-meta">
+                                                    <span class="text-muted">Current preview available</span>
+                                                </div>
+                                            </t>
+                                        </div>
+                                    </div>
+                                </t>
+
+                                <t t-if="writeResultMessage">
+                                    <div class="ai-write-result-message mt-3" t-esc="writeResultMessage"/>
+                                </t>
+                                <t t-if="!writeResultMessage and writeFailureMessage and ['failed', 'rejected', 'expired'].includes(writeRequest.state)">
+                                    <div class="ai-write-result-message is-error mt-3" t-esc="writeFailureMessage"/>
+                                </t>
+
+                                <div class="ai-write-action-row mt-3">
+                                    <button t-if="canApproveWriteRequest"
+                                            class="btn btn-sm btn-primary"
+                                            t-on-click="approveWriteRequest">
+                                        <i class="fa fa-check me-1"/>
+                                        Approve
+                                    </button>
+                                    <button t-if="canRejectWriteRequest"
+                                            class="btn btn-sm btn-outline-secondary"
+                                            t-on-click="rejectWriteRequest">
+                                        <i class="fa fa-times me-1"/>
+                                        Reject
+                                    </button>
+                                    <button t-if="canOpenWriteRequestRecords"
+                                            class="btn btn-sm btn-outline-primary"
+                                            t-on-click="openWriteRequestRecords">
+                                        <i class="fa fa-list-ul me-1"/>
+                                        <span t-esc="writeOpenButtonLabel"/>
+                                    </button>
+                                </div>
+                            </div>
+                        </t>
+
+                        <t t-if="eventBadges.length">
+                            <div class="ai-turn-badges mt-2">
+                                <t t-foreach="eventBadges" t-as="badge" t-key="badge.label">
+                                    <span class="ai-turn-badge" t-att-class="'is-' + badge.className" t-esc="badge.label"/>
+                                </t>
+                            </div>
+                        </t>
+
+                        <div class="ai-action-row mt-2">
+                            <!-- Debug Button (only visible in debug mode AND for admin users) -->
+                            <t t-if="isDebugMode and isAdmin">
+                                <button class="btn btn-sm ai-debug-toggle"
+                                        t-on-click="toggleDebugInfo"
+                                        title="Show executed domain (debug mode)">
+                                    <i class="fa fa-bug me-1"/>
+                                    <span t-if="!state.showDebugInfo">Show Query</span>
+                                    <span t-else="">Hide Query</span>
+                                </button>
+                            </t>
+
+                            <t t-if="props.message.action_data">
+                                <div class="ai-action-buttons">
+                                    <button t-foreach="actionButtons" t-as="button" t-key="button.key"
+                                            t-att-class="button.className + ' btn-sm ai-open-view-button'"
+                                            t-on-click="() => this.onOpenView(button.key)">
+                                        <i t-att-class="'fa ' + button.icon"/>
+                                        <span t-esc="button.label"/>
+                                    </button>
+                                </div>
+                            </t>
+                        </div>
+
+                        <!-- Debug Info Panel (toggleable, only for admin users) -->
+                        <t t-if="isDebugMode and isAdmin">
+                            <div t-if="state.showDebugInfo" class="ai-debug-panel mt-2">
+                                <div class="ai-debug-header">
+                                    <strong>Executed Query</strong>
+                                </div>
+                                <div class="ai-debug-content">
+                                    <div class="mb-2">
+                                        <span class="text-muted">Model:</span>
+                                        <code class="ms-2" t-esc="debugModel"/>
+                                    </div>
+                                    <div class="mb-2">
+                                        <span class="text-muted">Domain:</span>
+                                        <pre class="ai-debug-code mb-0"><code t-esc="debugDomainFormatted"/></pre>
+                                    </div>
+                                    <div t-if="debugFields.length > 0">
+                                        <span class="text-muted">Fields:</span>
+                                        <pre class="ai-debug-code mb-0"><code t-esc="debugFieldsFormatted"/></pre>
+                                    </div>
+
+                                    <div t-if="toolLifecycleEvents.length" class="ai-debug-section">
+                                        <div class="small fw-bold mb-1">Turn Events</div>
+                                        <div class="ai-turn-event-list">
+                                            <div t-foreach="toolLifecycleEvents" t-as="event" t-key="event.timestamp + event.type" class="ai-turn-event-item">
+                                                <span class="ai-turn-event-type" t-esc="formatEventType(event.type)"/>
+                                                <span class="ai-turn-event-summary" t-esc="eventSummary(event)"/>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div t-if="Object.keys(providerCapabilities).length" class="ai-debug-section">
+                                        <div class="small fw-bold mb-1">Provider Capabilities</div>
+                                        <div class="row g-0 small">
+                                            <div class="col-6">
+                                                <span class="text-muted">Tools:</span>
+                                                <t t-esc="providerCapabilities.tool_calling ? 'yes' : 'no'"/>
+                                            </div>
+                                            <div class="col-6">
+                                                <span class="text-muted">Streaming:</span>
+                                                <t t-esc="providerCapabilities.streaming ? 'yes' : 'no'"/>
+                                            </div>
+                                            <div class="col-6">
+                                                <span class="text-muted">Structured:</span>
+                                                <t t-esc="providerCapabilities.structured_output || 'n/a'"/>
+                                            </div>
+                                            <div class="col-6">
+                                                <span class="text-muted">Cancel:</span>
+                                                <t t-esc="providerCapabilities.cancellation || 'n/a'"/>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div t-if="promptCache.metadata" class="ai-debug-section">
+                                        <div class="small fw-bold mb-1">Prompt Cache</div>
+                                        <div class="row g-0 small">
+                                            <div class="col-6">
+                                                <span class="text-muted">Strategy:</span>
+                                                <t t-esc="promptCacheStrategyLabel"/>
+                                            </div>
+                                            <div class="col-6">
+                                                <span class="text-muted">Stable chars:</span>
+                                                <t t-esc="promptCache.metadata.stable_prefix_chars || 0"/>
+                                            </div>
+                                            <div class="col-6">
+                                                <span class="text-muted">Dynamic chars:</span>
+                                                <t t-esc="promptCache.metadata.dynamic_suffix_chars || 0"/>
+                                            </div>
+                                            <div class="col-6">
+                                                <span class="text-muted">Follow-up:</span>
+                                                <t t-esc="promptCache.metadata.is_followup ? 'yes' : 'no'"/>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Usage Statistics -->
+                                    <div class="ai-debug-section">
+                                        <div class="small fw-bold mb-1">Usage Statistics</div>
+                                        <div class="row g-0 small">
+                                            <div class="col-6">
+                                                <span class="text-muted">Tokens:</span> 
+                                                <t t-esc="usagePromptTokens"/> / <t t-esc="usageCompletionTokens"/>
+                                            </div>
+                                            <div class="col-6">
+                                                <span class="text-muted">Total:</span> <t t-esc="usageTotalTokens"/>
+                                            </div>
+                                            <div class="col-6">
+                                                <span class="text-muted">Tools:</span> <t t-esc="toolCallCount"/> calls
+                                            </div>
+                                            <div class="col-6">
+                                                <span class="text-muted">Time:</span> <t t-esc="executionTime"/>s
+                                            </div>
+                                            <div class="col-6" t-if="usageReasoningTokens > -1">
+                                                <span class="text-muted">Reasoning Tokens:</span> <t t-esc="usageReasoningTokens"/>
+                                            </div>
+                                            <div class="col-6" t-if="props.message.sh_reasoning_effort">
+                                                <span class="text-muted">Reasoning:</span> <t t-esc="reasoningEffortLabel"/>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                </div>
+                            </div>
+                        </t>
+                    </t>
+                    <t t-else="">
+                        <t t-esc="props.message.content"/>
+                    </t>
+                </div>
+            </div>
+        </div>
+    </t>
+</templates>

@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="sh_ai_assistance.AiChatWindowContentTemplate">
+        <div class="sh-ai-window-content d-flex flex-column h-100">
+
+            <div class="sh-ai-window-panel-body flex-grow-1 d-flex flex-column min-vh-0">
+                <div class="sh-ai-window-message-area flex-grow-1 overflow-auto" t-ref="messagesContainer">
+                    <t t-if="state.isFetchLoading">
+                        <div class="sh-ai-window-loading d-flex flex-column justify-content-center align-items-center h-100 p-4">
+                            <i class="fa fa-spinner fa-spin fa-2x mb-3 text-primary"/>
+                            <div class="text-muted">Loading messages...</div>
+                        </div>
+                    </t>
+
+                    <t t-elif="state.messages.length === 0">
+                        <div class="sh-ai-window-empty-state p-4 d-flex flex-column gap-3">
+                            <div class="sh-ai-window-empty-top d-flex align-items-center gap-3">
+                                <div class="sh-ai-window-empty-avatar">
+                                    <t t-if="props.selectedModel and props.selectedModel.image and props.selectedModel.id">
+                                        <img class="sh-ai-window-empty-avatar-img"
+                                             t-att-src="'/web/image/sh.ai.llm/' + props.selectedModel.id + '/image'"
+                                             t-att-alt="props.selectedModel.name"/>
+                                    </t>
+                                    <t t-else="">
+                                        <div class="sh-ai-window-empty-avatar-fallback">
+                                            <i class="fa fa-robot"/>
+                                        </div>
+                                    </t>
+                                </div>
+                                <div>
+                                    <div class="sh-ai-window-empty-title">Ask your AI assistant</div>
+                                    <div class="text-muted small">Ask about invoices, contacts, stock, users, or any live Odoo data.</div>
+                                </div>
+                            </div>
+                            <div class="sh-ai-window-empty-prompt-list">
+                                <div class="sh-ai-window-empty-subtitle">Try one of these prompts:</div>
+                                <div class="sh-ai-window-prompt-buttons d-flex flex-wrap gap-2">
+                                    <button t-foreach="suggestedQuestions" t-as="question" t-key="question"
+                                            type="button"
+                                            class="btn btn-outline-secondary btn-sm"
+                                            t-on-click="() => this.selectDemoQuestion(question)"
+                                            t-att-disabled="state.isProcessing">
+                                        <t t-esc="question"/>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </t>
+
+                    <t t-foreach="state.messages" t-as="message" t-key="message_index">
+                        <ChatMessage message="message"
+                                     messageIndex="message_index"
+                                     currentUser="currentUser"
+                                     currentLlm="props.selectedModel"
+                                     availableModels="props.availableModels"
+                                     onWriteRequestChanged.bind="onWriteRequestChanged"/>
+                    </t>
+
+                    <t t-if="state.isProcessing">
+                        <AiTypingIndicator
+                            currentLlm="props.selectedModel"
+                            currentUser="currentUser"
+                            currentStageTitle="currentProcessingStatus.title"
+                            currentStageHint="currentProcessingStatus.detail"/>
+                    </t>
+                </div>
+
+                <div class="sh-ai-window-input-panel border-top p-3">
+                    <div class="d-flex flex-column gap-2 mb-1">
+                        <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+                            <div class="sh-ai-window-preference d-flex flex-column gap-1">
+                                <div class="d-flex align-items-center gap-2 flex-wrap">
+                                    <span class="sh-ai-window-input-label text-muted small">Open view actions</span>
+                                    <select class="form-select form-select-sm"
+                                            style="min-width: 180px;"
+                                            t-att-value="state.viewPreference"
+                                            t-on-change="onViewPreferenceChange"
+                                            t-att-disabled="state.isProcessing">
+                                        <option value="auto">Auto</option>
+                                        <option value="show">Always Show</option>
+                                        <option value="hide">Hide</option>
+                                    </select>
+                                </div>
+                                <span class="text-muted small" t-esc="viewPreferenceHelpText"/>
+                            </div>
+                        </div>
+
+                        <div t-if="state.isListening" class="ai-speech-live-panel" style="margin-bottom: 0.5rem; zoom: 0.9;">
+                            <div class="speech-live-header">
+                                <div class="speech-indicator-wrapper">
+                                    <div class="voice-wave-container">
+                                        <div class="wave-bar"></div>
+                                        <div class="wave-bar"></div>
+                                        <div class="wave-bar"></div>
+                                        <div class="wave-bar"></div>
+                                        <div class="wave-bar"></div>
+                                    </div>
+                                    <span class="pulse-text">Listening...</span>
+                                </div>
+                                <button class="btn btn-sm discard-btn" t-on-click="discardSpeech" title="Discard">
+                                    <i class="fa fa-times-circle"/>
+                                </button>
+                            </div>
+                            <div class="speech-live-content">
+                                <div class="transcript-wrapper">
+                                    <span class="speech-text-final" t-esc="state.currentQuery"/>
+                                    <span class="speech-text-interim" t-esc="state.interimTranscript"/>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="sh-ai-window-input-area d-flex gap-2 align-items-center">
+                            <div class="sh-ai-window-avatar-section">
+                                <t t-if="currentUser.id and currentUser.id !== 'undefined'">
+                                    <img class="sh-ai-window-user-avatar"
+                                         t-att-src="'/web/image/res.users/' + currentUser.id + '/avatar_128'"
+                                         t-att-alt="currentUser.name"/>
+                                </t>
+                                <t t-else="">
+                                    <div class="sh-ai-window-user-avatar sh-ai-window-user-avatar-fallback">
+                                        <i class="fa fa-user"/>
+                                    </div>
+                                </t>
+                            </div>
+                            <div class="sh-ai-window-textarea-wrapper flex-grow-1 position-relative">
+                                <textarea class="sh-ai-window-textarea"
+                                          placeholder="Ask for any live Odoo data..."
+                                          t-model="state.currentQuery"
+                                          t-on-keypress="onKeyPress"
+                                          t-on-input="onInputChange"
+                                          t-ref="textInput"
+                                          t-att-disabled="state.isProcessing or state.isListening"
+                                          rows="1"></textarea>
+                                <div t-if="state.currentQuery.length > 100" class="sh-ai-window-char-counter">
+                                    <t t-esc="state.currentQuery.length"/>/10000
+                                </div>
+                                <div t-if="state.showShiftEnterHint" class="sh-ai-window-hint-tooltip">
+                                    Press Shift+Enter for new line
+                                </div>
+                            </div>
+                            <div class="sh-ai-window-buttons d-flex align-items-center gap-2">
+                                <button t-if="state.speechSupported and !state.isProcessing"
+                                        class="btn btn-sm rounded-circle d-flex align-items-center justify-content-center ai-speech-button"
+                                        t-att-class="{ 'listening': state.isListening, 'btn-danger': state.isListening, 'btn-outline-primary': !state.isListening }"
+                                        style="width: 34px; height: 34px;"
+                                        type="button"
+                                        tabindex="-1"
+                                        t-on-click="toggleSpeechRecognition"
+                                        t-att-title="state.isListening ? 'Stop Listening' : 'Speech to Text'">
+                                    <i class="fa fa-microphone" style="font-size: 14px;"/>
+                                </button>
+                                <button t-if="state.isProcessing"
+                                        type="button"
+                                        class="btn btn-danger btn-sm rounded-circle d-flex align-items-center justify-content-center"
+                                        style="width: 34px; height: 34px;"
+                                        t-on-click="stopProcessing"
+                                        title="Stop Generation">
+                                    <i class="fa fa-stop" style="font-size: 14px;"/>
+                                </button>
+                                <button t-if="!state.isProcessing"
+                                        type="button"
+                                        class="btn btn-primary btn-sm sh-ai-window-send-button"
+                                        t-on-click="sendMessage"
+                                        t-att-disabled="state.isProcessing or !state.currentQuery.trim()">
+                                    <i class="fa fa-paper-plane"/>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- <div class="sh-ai-window-bottom-info d-flex flex-wrap gap-2 text-muted small">
+                        <span>Enter to send</span>
+                        <span>Shift+Enter for a new line</span>
+                        <span>Use Open view actions to control whether record-opening buttons are attached to AI answers</span>
+                    </div> -->
+
+                    <div t-if="providerWarningMessage" class="sh-ai-window-provider-warning text-danger small mt-2">
+                        <i class="fa fa-exclamation-triangle me-1" style="font-size: 10px;"/>
+                        <t t-esc="providerWarningMessage"/>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </t>
+</templates>
