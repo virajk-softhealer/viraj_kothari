@@ -1,6 +1,0 @@
-# Third-party dependencies for sh_ai_assistance
-# Odoo: 18 | Python: 3.10
-
-google-genai==1.73.1  #odoo18 |python3.10
-Markdown==3.10.2  #odoo18 |python3.10
-openai==2.31.0  #odoo18 |python3.10
