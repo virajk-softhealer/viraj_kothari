@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_sh_ai_write_request_tree" model="ir.ui.view">
+        <field name="name">sh.ai.write.request.tree</field>
+        <field name="model">sh.ai.write.request</field>
+        <field name="arch" type="xml">
+            <tree string="AI Write Requests">
+                <field name="display_name"/>
+                <field name="operation"/>
+                <field name="state"/>
+                <field name="requester_id"/>
+                <field name="target_model_display_name"/>
+                <field name="create_date"/>
+                <field name="approved_at"/>
+                <field name="executed_at"/>
+            </tree>
+        </field>
+    </record>
+
+    <record id="view_sh_ai_write_request_form" model="ir.ui.view">
+        <field name="name">sh.ai.write.request.form</field>
+        <field name="model">sh.ai.write.request</field>
+        <field name="arch" type="xml">
+            <form string="AI Write Request">
+                <header>
+                    <field name="state" widget="statusbar" statusbar_visible="pending,approved,executing,done,rejected,failed,expired"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="operation"/>
+                            <field name="requester_id"/>
+                            <field name="approver_id"/>
+                            <field name="llm_id"/>
+                        </group>
+                        <group>
+                            <field name="target_model_display_name"/>
+                            <field name="target_model"/>
+                            <field name="session_id"/>
+                            <field name="message_id"/>
+                        </group>
+                    </group>
+
+                    <group>
+                        <field name="summary" readonly="1"/>
+                        <field name="failure_reason" readonly="1"/>
+                    </group>
+
+                    <notebook>
+                        <page string="Preview">
+                            <field name="preview_json" readonly="1"/>
+                        </page>
+                        <page string="Requested Values">
+                            <field name="requested_values" readonly="1"/>
+                        </page>
+                        <page string="Normalized Values">
+                            <field name="normalized_values" readonly="1"/>
+                        </page>
+                        <page string="Target">
+                            <field name="target_domain" readonly="1"/>
+                            <field name="target_record_ids" readonly="1"/>
+                            <field name="action_data" readonly="1"/>
+                        </page>
+                        <page string="Result">
+                            <field name="result_json" readonly="1"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_sh_ai_write_request" model="ir.actions.act_window">
+        <field name="name">AI Write Requests</field>
+        <field name="res_model">sh.ai.write.request</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>
