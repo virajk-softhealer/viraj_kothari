@@ -37,6 +37,8 @@ export class AiTypingIndicatorComponent extends Component {
             return 'google';
         } else if (company.includes('openai') || company.includes('gpt')) {
             return 'openai';
+        } else if (company.includes('deepseek')) {
+            return 'deepseek';
         } else if (company.includes('anthropic') || company.includes('claude')) {
             return 'anthropic';
         }

@@ -56,6 +56,12 @@
                                             <t t-elif="provider.company.toLowerCase() === 'openai'">
                                                 <img src="/sh_ai_base/static/img/chatgpt.png" alt="ChatGPT" class="provider-logo"/>
                                             </t>
+                                            <t t-elif="provider.company.toLowerCase() === 'deepseek'">
+                                                <img src="/sh_ai_base/static/img/deepseek.svg" alt="DeepSeek" class="provider-logo"/>
+                                            </t>
+                                            <t t-elif="provider.company.toLowerCase() === 'anthropic' || provider.company.toLowerCase() === 'claude'">
+                                                <img src="/sh_ai_base/static/img/claude.svg" alt="Claude" class="provider-logo"/>
+                                            </t>
                                             <t t-elif="provider.company.toLowerCase() === 'openrouter'">
                                                 <img src="/sh_ai_base/static/img/openrouter.png" alt="OpenRouter" class="provider-logo"/>
                                             </t>
@@ -64,6 +70,8 @@
                                         <span class="provider-name">
                                             <t t-if="provider.company.toLowerCase() === 'google'">Google (Gemini)</t>
                                             <t t-elif="provider.company.toLowerCase() === 'openai'">OpenAI (ChatGPT)</t>
+                                            <t t-elif="provider.company.toLowerCase() === 'deepseek'">DeepSeek</t>
+                                            <t t-elif="provider.company.toLowerCase() === 'anthropic' || provider.company.toLowerCase() === 'claude'">Claude</t>
                                             <t t-elif="provider.company.toLowerCase() === 'openrouter'">OpenRouter</t>
                                             <t t-else="" t-esc="provider.company"/>
                                         </span>

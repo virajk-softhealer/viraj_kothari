@@ -345,6 +345,17 @@
     }
 }
 
+.ai-thinking-bubble[data-provider="deepseek"] {
+    .ai-brain-icon, .ai-progress-fill {
+        color: #1d4ed8;
+        background: #1d4ed8;
+    }
+    .ai-avatar-thinking {
+        border-color: #1d4ed8;
+        box-shadow: 0 0 0 0 rgba(29, 78, 216, 0.4);
+    }
+}
+
 .ai-thinking-bubble[data-provider="anthropic"] {
     .ai-brain-icon, .ai-progress-fill {
         color: #d97757;
@@ -439,6 +450,10 @@
             color: #10a37f;
         }
 
+        &[data-provider="deepseek"] .ai-brain-icon {
+            color: #60a5fa;
+        }
+
         &[data-provider="anthropic"] .ai-brain-icon {
             color: #f2a085;
         }
@@ -451,6 +466,10 @@
 
     .ai-message:has(.ai-thinking-bubble[data-provider="openai"]) .ai-avatar-thinking {
         border-color: #10a37f;
+    }
+
+    .ai-message:has(.ai-thinking-bubble[data-provider="deepseek"]) .ai-avatar-thinking {
+        border-color: #60a5fa;
     }
 
     .ai-message:has(.ai-thinking-bubble[data-provider="anthropic"]) .ai-avatar-thinking {

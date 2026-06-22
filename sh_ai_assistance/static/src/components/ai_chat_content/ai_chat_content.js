@@ -118,6 +118,10 @@ export class AiChatContentComponent extends Component {
             return "Google AI models may make mistakes, so double-check outputs.";
         } else if (companyLower.includes('openai') || companyLower.includes('open ai')) {
             return "ChatGPT models may make mistakes, so double-check outputs.";
+        } else if (companyLower.includes('deepseek')) {
+            return "DeepSeek models may make mistakes, so double-check outputs.";
+        } else if (companyLower.includes('anthropic') || companyLower.includes('claude')) {
+            return "Claude models may make mistakes, so double-check outputs.";
         }
 
         return null;
