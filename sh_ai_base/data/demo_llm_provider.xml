@@ -41,11 +41,11 @@
             <field name="active">True</field>
         </record>
 
-        <!-- Demo Claude 3.5 Sonnet Provider (Anthropic) -->
+        <!-- Demo Claude Sonnet 4.6 Provider (Anthropic) -->
         <record id="demo_claude_35_sonnet" model="sh.ai.llm">
-            <field name="name">Claude 3.5 Sonnet</field>
+            <field name="name">Claude Sonnet 4.6</field>
             <field name="sh_company">Anthropic</field>
-            <field name="sh_model_code">claude-3-5-sonnet-latest</field>
+            <field name="sh_model_code">claude-sonnet-4-6</field>
             <field name="sh_api_key">YOUR_ANTHROPIC_API_KEY_HERE</field>
             <field name="image" type="base64" file="sh_ai_base/static/img/claude.png"/>
             <field name="active">True</field>

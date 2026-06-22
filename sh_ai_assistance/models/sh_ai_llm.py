@@ -743,7 +743,7 @@ class ShAiLlm(models.Model):
             "content-type": "application/json"
         }
         data = {
-            "model": "claude-3-5-sonnet-latest",
+            "model": "claude-opus-4-7",
             "messages": [{"role": "user", "content": "Say 'hello' in one word."}],
             "max_tokens": 5
         }
