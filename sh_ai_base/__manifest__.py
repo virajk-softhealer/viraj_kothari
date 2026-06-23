@@ -7,7 +7,7 @@
     'license': 'OPL-1',
     'summary': 'AI base app',
     'description': 'This is the only base app for AI apps.',
-    'version': '19.0.4.0.0',
+    'version': '19.0.5.0.0',
     'depends': ['web', 'mail'],
     'external_dependencies': {'python': ['certifi', 'openai', 'google-genai']},
     'data': ['security/sh_ai_groups.xml', 'security/ir.model.access.csv', 'data/demo_llm_provider.xml', 'views/sh_ai_llm_views.xml'],

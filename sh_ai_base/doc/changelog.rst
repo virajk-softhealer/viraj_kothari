@@ -25,3 +25,8 @@ Supports for MCP Tools.
 
 [IMP] :
 ADD Reasoning effort selection in LLM Providers : Allow user to select reasoning effort for AI chat to set how 
+
+19.0.5 (Date : 23th June 2026)
+
+[IMP] :
+Add Deepseek and Claude Model in LLM.
