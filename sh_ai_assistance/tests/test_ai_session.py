@@ -6,6 +6,8 @@ from unittest.mock import patch
 from odoo.tests.common import TransactionCase
 from odoo.addons.sh_ai_assistance.ai_processing.base_engine import BaseAiEngine
 from odoo.addons.sh_ai_assistance.ai_processing.engine_factory import AiEngineFactory
+from odoo.addons.sh_ai_assistance.ai_processing.claude_engine import ClaudeEngine
+from odoo.addons.sh_ai_assistance.ai_processing.deepseek_engine import DeepSeekEngine
 from odoo.addons.sh_ai_assistance.ai_processing.gemini_engine import GeminiEngine
 from odoo.addons.sh_ai_assistance.ai_processing.openai_engine import OpenAiEngine
 from odoo.addons.sh_ai_assistance.ai_processing.openrouter_engine import OpenRouterEngine
@@ -492,6 +494,23 @@ class TestAiSession(TransactionCase):
 
         self.assertEqual(llm._detect_provider_type(), 'openrouter')
         self.assertIsInstance(AiEngineFactory.get_engine(self.env, llm._detect_provider_type()), OpenRouterEngine)
+
+    def test_deepseek_and_claude_provider_types_route_to_matching_engines(self):
+        deepseek_llm = self.env['sh.ai.llm'].create({
+            'name': 'DeepSeek Model',
+            'sh_company': 'DeepSeek',
+            'sh_model_code': 'deepseek-v4-flash',
+        })
+        claude_llm = self.env['sh.ai.llm'].create({
+            'name': 'Claude Model',
+            'sh_company': 'Anthropic',
+            'sh_model_code': 'claude-sonnet-4-6',
+        })
+
+        self.assertEqual(deepseek_llm._detect_provider_type(), 'deepseek')
+        self.assertEqual(claude_llm._detect_provider_type(), 'claude')
+        self.assertIsInstance(AiEngineFactory.get_engine(self.env, 'deepseek'), DeepSeekEngine)
+        self.assertIsInstance(AiEngineFactory.get_engine(self.env, 'claude'), ClaudeEngine)
 
     def test_engine_factory_returns_openrouter_engine(self):
         selected = AiEngineFactory.get_engine(self.env, 'openrouter')

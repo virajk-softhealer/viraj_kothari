@@ -132,6 +132,28 @@ class TestAiOpenrouterModel(TransactionCase):
         self.assertEqual(llm.sh_company, "Google")
         self.assertEqual(llm.sh_model_code, "gemini-2.5-flash")
 
+    def test_verify_api_key_routes_deepseek_and_claude_providers(self):
+        deepseek_llm = self.env["sh.ai.llm"].create({
+            "name": "DeepSeek Model",
+            "sh_company": "DeepSeek",
+            "sh_model_code": "deepseek-v4-flash",
+        })
+        claude_llm = self.env["sh.ai.llm"].create({
+            "name": "Claude Model",
+            "sh_company": "Anthropic",
+            "sh_model_code": "claude-sonnet-4-6",
+        })
+
+        with patch.object(type(deepseek_llm), "_verify_deepseek_key", return_value={"success": True, "message": "ok"}) as mocked_deepseek:
+            result = deepseek_llm._verify_api_key("DeepSeek", "fake-deepseek-key")
+            self.assertTrue(result["success"])
+            mocked_deepseek.assert_called_once()
+
+        with patch.object(type(claude_llm), "_verify_claude_key", return_value={"success": True, "message": "ok"}) as mocked_claude:
+            result = claude_llm._verify_api_key("Anthropic", "fake-claude-key")
+            self.assertTrue(result["success"])
+            mocked_claude.assert_called_once()
+
     def test_action_fetch_openrouter_models_returns_success_notification(self):
         with patch.object(type(self.llm), "_fetch_openrouter_models_payload", return_value=[
             {

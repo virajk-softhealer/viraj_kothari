@@ -59,12 +59,12 @@
                                    domain="[('active', '=', True)]"
                                    options="{'no_create': True, 'no_create_edit': True, 'no_open': True}"/>
                             <field name="sh_company"
-                                   placeholder="e.g. OpenAI"
+                                   placeholder="e.g. OpenAI, DeepSeek, or Anthropic"
                                    readonly="provider_type == 'openrouter'"
                                    required="provider_type == 'direct'"
                                    force_save="1"/>
                             <field name="sh_model_code"
-                                   placeholder="e.g. gpt-4o or gemini-2.5-flash"
+                                   placeholder="e.g. gpt-4o, gemini-2.5-flash, deepseek-v4-flash, or claude-sonnet-4-6"
                                    readonly="provider_type == 'openrouter'"
                                    required="provider_type == 'direct'"
                                    force_save="1"/>

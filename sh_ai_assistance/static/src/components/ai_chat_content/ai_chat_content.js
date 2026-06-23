@@ -125,7 +125,7 @@ export class AiChatContentComponent extends Component {
 
         if (companyLower.includes('google') || companyLower.includes('gemini')) {
             return "Google AI models may make mistakes, so double-check outputs.";
-        } else if (companyLower.includes('openai') || companyLower.includes('open ai')) {
+        } else if (companyLower.includes('openai') || companyLower.includes('open ai') || companyLower.includes('deepseek')) {
             return "ChatGPT models may make mistakes, so double-check outputs.";
         }
 

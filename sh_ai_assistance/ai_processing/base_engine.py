@@ -45,6 +45,20 @@ class BaseAiEngine:
                 'usage_fields': True,
                 'cancellation': 'stream_close',
             },
+            'deepseek': {
+                'tool_calling': True,
+                'structured_output': 'json_schema',
+                'streaming': True,
+                'usage_fields': True,
+                'cancellation': 'stream_close',
+            },
+            'claude': {
+                'tool_calling': True,
+                'structured_output': 'anthropic_messages',
+                'streaming': True,
+                'usage_fields': True,
+                'cancellation': 'stream_close',
+            },
             'gemini': {
                 'tool_calling': True,
                 'structured_output': 'function_declarations',

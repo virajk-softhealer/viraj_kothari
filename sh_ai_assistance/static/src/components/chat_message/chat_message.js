@@ -61,7 +61,7 @@ export class ChatMessageComponent extends Component {
         if (company === "google") {
             return strategy.gemini || "implicit";
         }
-        if (company === "openai") {
+        if (company === "openai" || company.includes("deepseek")) {
             return strategy.openai || "implicit";
         }
         return strategy.openai || strategy.gemini || "implicit";
