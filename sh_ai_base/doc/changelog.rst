@@ -25,3 +25,11 @@ New tools are added.
 ==========
 [IMP] :
 ADD Reasoning effort selection in LLM Providers : Allow user to select reasoning effort for AI chat to set how 
+
+------------------------------------------------------------------------------------------------------------------------------------
+
+18.0.5.0.0 (Date : 23th June 2026)
+==========
+[IMP] :
+Add Deepseek and Claude Model in LLM.
+
