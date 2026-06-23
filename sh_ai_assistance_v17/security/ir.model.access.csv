@@ -1,9 +1,0 @@
-id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-access_sh_ai_chat_session_user,sh.ai.chat.session.user,model_sh_ai_chat_session,sh_ai_base.group_sh_ai_user,1,1,1,1
-access_sh_ai_chat_message_user,sh.ai.chat.message.user,model_sh_ai_chat_message,sh_ai_base.group_sh_ai_user,1,1,1,1
-access_sh_ai_chat_session_snapshot_user,sh.ai.chat.session.snapshot.user,sh_ai_assistance.model_sh_ai_chat_session_snapshot,sh_ai_base.group_sh_ai_user,1,1,1,1
-access_sh_ai_write_request_user,sh.ai.write.request.user,model_sh_ai_write_request,sh_ai_base.group_sh_ai_user,1,1,1,0
-access_sh_ai_write_request_manager,sh.ai.write.request.manager,model_sh_ai_write_request,sh_ai_base.group_sh_ai_manager,1,1,1,1
-access_sh_ai_write_policy_manager,sh.ai.write.policy.manager,model_sh_ai_write_policy,sh_ai_base.group_sh_ai_manager,1,1,1,1
-access_sh_ai_write_policy_field_manager,sh.ai.write.policy.field.manager,model_sh_ai_write_policy_field,sh_ai_base.group_sh_ai_manager,1,1,1,1
-access_sh_ai_chat_project_user,sh.ai.chat.project.user,model_sh_ai_chat_project,sh_ai_base.group_sh_ai_user,1,1,1,1
