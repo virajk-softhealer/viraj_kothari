@@ -15,3 +15,8 @@ ACCESS PROVIDED FOR AI CREATE, MODIFY AND ARCHIVE RECORDS
 ==========
 [IMP] :
 ADD Reasoning effort selection in LLM Providers : Allow user to select reasoning effort for AI chat to set how 
+
+16.0.4 (Date : 23th June 2026)
+==========
+[IMP] :
+Add Deepseek and Claude Model in LLM.
