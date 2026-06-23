@@ -11,6 +11,7 @@ from odoo.addons.sh_ai_assistance.ai_processing.engine_factory import AiEngineFa
 from odoo.addons.sh_ai_assistance.ai_processing.gemini_engine import GeminiEngine
 from odoo.addons.sh_ai_assistance.ai_processing.openai_engine import OpenAiEngine
 from odoo.addons.sh_ai_assistance.ai_processing.openrouter_engine import OpenRouterEngine
+from odoo.addons.sh_ai_base.provider.claude_provider import ClaudeProvider
 from odoo.addons.sh_ai_base.provider.gemini_provider import clone_gemini_part
 from odoo.addons.sh_ai_assistance.ai_processing.utils import sanitize_for_json
 from odoo.addons.sh_ai_assistance.models.sh_ai_llm import ShAiLlm as AssistantLlm
@@ -499,6 +500,52 @@ class TestAiSession(TransactionCase):
         self.assertEqual(claude_llm._detect_provider_type(), 'claude')
         self.assertIsInstance(AiEngineFactory.get_engine(self.env, 'deepseek'), DeepSeekEngine)
         self.assertIsInstance(AiEngineFactory.get_engine(self.env, 'claude'), ClaudeEngine)
+
+    def test_claude_engine_converts_tools_to_anthropic_schema(self):
+        engine = ClaudeEngine(self.env)
+        tool = engine._convert_tools([
+            {
+                'name': 'search_records',
+                'description': 'Search records',
+                'parameters': {
+                    'type': 'object',
+                    'properties': {
+                        'model': {'type': 'string'},
+                    },
+                    'required': ['model'],
+                },
+            },
+        ])[0]
+
+        self.assertEqual(tool['name'], 'search_records')
+        self.assertEqual(tool['input_schema']['type'], 'object')
+        self.assertEqual(tool['input_schema']['required'], ['model'])
+
+    def test_claude_provider_receives_system_instruction_separately(self):
+        provider = ClaudeProvider('test-key')
+        response = type('Response', (), {
+            'choices': [type('Choice', (), {
+                'message': type('Message', (), {
+                    'content': 'ok',
+                    'tool_calls': None,
+                })()
+            })()],
+            'usage': None,
+        })()
+
+        with patch.object(provider, '_create_completion', return_value=response) as mocked:
+            provider.generate_content(
+                model='claude-sonnet-4-6',
+                messages=[{'role': 'user', 'content': 'Hello'}],
+                system='System prompt',
+                tools=[{'name': 'search_records', 'description': 'Search', 'input_schema': {'type': 'object'}}],
+                temperature=0.2,
+            )
+
+        params = mocked.call_args.args[0]
+        self.assertEqual(params['system'], 'System prompt')
+        self.assertEqual(params['messages'][0]['content'], 'Hello')
+        self.assertEqual(params['tools'][0]['name'], 'search_records')
 
     def test_new_provider_key_verification_routes_to_new_helpers(self):
         deepseek_llm = self.env['sh.ai.llm'].create({

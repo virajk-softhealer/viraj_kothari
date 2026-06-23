@@ -647,11 +647,9 @@ class ShAiLlm(models.Model):
     def _verify_deepseek_key(self, api_key):
         """Test a DeepSeek API key with a minimal OpenAI-compatible request."""
         try:
-            
-
             client = OpenAI(api_key=api_key, base_url='https://api.deepseek.com')
             response = client.chat.completions.create(
-                model='deepseek-v4-flash',
+                model='deepseek-chat',
                 messages=[{'role': 'user', 'content': 'Say "hello" in one word.'}],
                 max_tokens=5,
             )

@@ -14,20 +14,21 @@ _logger = logging.getLogger(__name__)
 
 
 class ClaudeEngine(BaseAiEngine):
-    """Processing engine for Claude models."""
+    """Processing engine for Anthropic Claude models."""
 
     provider_type = "claude"
     provider_class = ClaudeProvider
 
     def _convert_tools(self, tool_declarations):
+        # Anthropic uses input_schema instead of parameters.
         return [
             {
-                "type": "function",
-                "function": {
-                    "name": t["name"],
-                    "description": t["description"],
-                    "parameters": t["parameters"],
-                    "strict": t.get("strict", False),
+                "name": t["name"],
+                "description": t["description"],
+                "input_schema": {
+                    "type": t["parameters"]["type"],
+                    "properties": t["parameters"].get("properties", {}),
+                    "required": t["parameters"].get("required", []),
                 },
             }
             for t in tool_declarations
@@ -58,7 +59,7 @@ class ClaudeEngine(BaseAiEngine):
             }
 
         provider = self.provider_class(api_key=api_key)
-        openai_tools = self._convert_tools(tool_declarations)
+        claude_tools = self._convert_tools(tool_declarations) if tool_declarations else None
         context = self._create_turn_context(
             runtime_provider_type,
             view_preference=view_preference,
@@ -69,8 +70,7 @@ class ClaudeEngine(BaseAiEngine):
         context["prompt_cache_metadata"] = prompt_cache_metadata
         context["prompt_cache_key"] = prompt_cache_key
 
-        messages = [{"role": "system", "content": system_instruction}]
-
+        messages = []
         for msg in previous_messages:
             role = "user" if msg.message_type == "user" else "assistant"
             if messages and messages[-1]["role"] == role:
@@ -92,11 +92,10 @@ class ClaudeEngine(BaseAiEngine):
                 response = provider.generate_content(
                     model=model_code,
                     messages=messages,
-                    tools=openai_tools,
+                    system=system_instruction,
+                    tools=claude_tools,
                     temperature=temperature,
-                    reasoning_effort=reasoning_effort,
                     stop_event=stop_event,
-                    prompt_cache_key=prompt_cache_key,
                 )
 
                 usage = getattr(response, "usage", None)
@@ -104,51 +103,44 @@ class ClaudeEngine(BaseAiEngine):
                     p_tok = getattr(usage, "prompt_tokens", 0) or 0
                     c_tok = getattr(usage, "completion_tokens", 0) or 0
                     t_tok = getattr(usage, "total_tokens", 0) or 0
-
-                    pt_details = getattr(usage, "prompt_tokens_details", None)
-                    cached_tokens = 0
-                    if pt_details:
-                        cached_tokens = getattr(pt_details, "cached_tokens", 0) or 0
-
-                    reasoning_tokens = getattr(usage, "reasoning_tokens", 0) or 0
-                    if not reasoning_tokens:
-                        ct_details = getattr(usage, "completion_tokens_details", None)
-                        if ct_details:
-                            if isinstance(ct_details, dict):
-                                reasoning_tokens = ct_details.get("reasoning_tokens", 0) or 0
-                            else:
-                                reasoning_tokens = getattr(ct_details, "reasoning_tokens", 0) or 0
-
                     self._accumulate_usage(
                         context,
                         prompt_tokens=p_tok,
                         completion_tokens=c_tok,
                         total_tokens=t_tok,
-                        cached_tokens=cached_tokens,
-                        reasoning_tokens=reasoning_tokens,
                     )
                     _logger.info(
-                        "📈 Claude Iteration %s usage: P=%s, C=%s, T=%s, Cached=%s, Reasoning=%s",
+                        "📈 Claude Iteration %s usage: P=%s, C=%s, T=%s",
                         iteration + 1,
                         p_tok,
                         c_tok,
                         t_tok,
-                        context["usage"]["cached_tokens"],
-                        reasoning_tokens,
                     )
 
                 message = response.choices[0].message
 
                 if message.tool_calls:
+                    assistant_content = []
+                    if message.content:
+                        assistant_content.append({"type": "text", "text": message.content})
+                    for tc in message.tool_calls:
+                        try:
+                            tc_args = json.loads(tc.function.arguments or "{}")
+                        except Exception:
+                            tc_args = {}
+                        assistant_content.append({
+                            "type": "tool_use",
+                            "id": tc.id,
+                            "name": tc.function.name,
+                            "input": tc_args,
+                        })
+
                     messages.append({
                         "role": "assistant",
-                        "content": message.content,
-                        "tool_calls": [
-                            {"id": tc.id, "type": "function", "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
-                            for tc in message.tool_calls
-                        ],
+                        "content": assistant_content,
                     })
 
+                    tool_results_content = []
                     for tool_call in message.tool_calls:
                         tool_name = tool_call.function.name
                         try:
@@ -173,11 +165,16 @@ class ClaudeEngine(BaseAiEngine):
                         self._register_tool_call(context, tool_name, tool_args, result, analysis=analysis)
                         context["debug_tool_calls"][-1]["response_id"] = tool_call.id
 
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
+                        tool_results_content.append({
+                            "type": "tool_result",
+                            "tool_use_id": tool_call.id,
                             "content": json.dumps(result, cls=OdooJSONEncoder),
                         })
+
+                    messages.append({
+                        "role": "user",
+                        "content": tool_results_content,
+                    })
                     continue
 
                 ai_response = message.content or ""
@@ -195,37 +192,20 @@ class ClaudeEngine(BaseAiEngine):
                     final_response = provider.generate_content(
                         model=model_code,
                         messages=final_messages,
+                        system=system_instruction,
                         temperature=temperature,
-                        reasoning_effort=reasoning_effort,
                         stop_event=stop_event,
-                        prompt_cache_key=prompt_cache_key,
                     )
                     usage = getattr(final_response, "usage", None)
                     if usage:
                         p_tok = getattr(usage, "prompt_tokens", 0) or 0
                         c_tok = getattr(usage, "completion_tokens", 0) or 0
                         t_tok = getattr(usage, "total_tokens", 0) or 0
-                        pt_details = getattr(usage, "prompt_tokens_details", None)
-                        cached_tokens = 0
-                        if pt_details:
-                            cached_tokens = getattr(pt_details, "cached_tokens", 0) or 0
-
-                        reasoning_tokens = getattr(usage, "reasoning_tokens", 0) or 0
-                        if not reasoning_tokens:
-                            ct_details = getattr(usage, "completion_tokens_details", None)
-                            if ct_details:
-                                if isinstance(ct_details, dict):
-                                    reasoning_tokens = ct_details.get("reasoning_tokens", 0) or 0
-                                else:
-                                    reasoning_tokens = getattr(ct_details, "reasoning_tokens", 0) or 0
-
                         self._accumulate_usage(
                             context,
                             prompt_tokens=p_tok,
                             completion_tokens=c_tok,
                             total_tokens=t_tok,
-                            cached_tokens=cached_tokens,
-                            reasoning_tokens=reasoning_tokens,
                         )
                     final_message = final_response.choices[0].message if final_response.choices else None
                     return final_message.content if final_message else ""
@@ -244,9 +224,8 @@ class ClaudeEngine(BaseAiEngine):
             return self._build_result(context, clean_ai_response(ai_response or ""))
 
         except AiStoppedException as e:
-            _logger.info("🛑 Claude Engine: Captured partial response after stop signal")
+            _logger.info("🚫 Claude Engine: Captured partial response after stop signal")
             partial_response = e.partial_response
-
             if not partial_response:
                 return self._build_result(context, "", is_stopped=True)
 
@@ -255,28 +234,11 @@ class ClaudeEngine(BaseAiEngine):
                 p_tok = getattr(usage, "prompt_tokens", 0) or 0
                 c_tok = getattr(usage, "completion_tokens", 0) or 0
                 t_tok = getattr(usage, "total_tokens", 0) or 0
-
-                pt_details = getattr(usage, "prompt_tokens_details", None)
-                cached_tokens = 0
-                if pt_details:
-                    cached_tokens = getattr(pt_details, "cached_tokens", 0) or 0
-
-                reasoning_tokens = getattr(usage, "reasoning_tokens", 0) or 0
-                if not reasoning_tokens:
-                    ct_details = getattr(usage, "completion_tokens_details", None)
-                    if ct_details:
-                        if isinstance(ct_details, dict):
-                            reasoning_tokens = ct_details.get("reasoning_tokens", 0) or 0
-                        else:
-                            reasoning_tokens = getattr(ct_details, "reasoning_tokens", 0) or 0
-
                 self._accumulate_usage(
                     context,
                     prompt_tokens=p_tok,
                     completion_tokens=c_tok,
                     total_tokens=t_tok,
-                    cached_tokens=cached_tokens,
-                    reasoning_tokens=reasoning_tokens,
                 )
 
             partial_message = partial_response.choices[0].message if partial_response.choices else None
