@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) Softhealer Technologies.
+# Copyright (C) Softhealer Technologies Pvt. Ltd.
 
 import base64
 import json
@@ -20,9 +20,9 @@ class ShAiLlm(models.Model):
     name = fields.Char(string="LLM Name", required=True,
                       help="Display name for this AI model (e.g. 'Gemini 2.5 Pro')")
     sh_company = fields.Char(string="Provider", required=False,
-                            help="AI provider company (e.g. 'Google', 'OpenAI', 'Anthropic')")
+                            help="AI provider company (e.g. 'Google', 'OpenAI', 'Anthropic', 'DeepSeek')")
     sh_model_code = fields.Char(string="Model Code", required=False,
-                               help="Technical model identifier for API calls (e.g. 'gemini-2.5-pro' or 'gpt-4o')")
+                               help="Technical model identifier for API calls (e.g. 'gemini-2.5-pro', 'gpt-4o', 'deepseek-v4-flash', or 'claude-sonnet-4-6')")
     provider_type = fields.Selection(
         [
             ('direct', 'Direct'),
@@ -46,11 +46,21 @@ class ShAiLlm(models.Model):
         if self.provider_type == 'openrouter':
             return 'openrouter'
 
+        company = (self.sh_company or '').lower()
         model_code = (self.sh_model_code or '').lower()
 
+        if 'deepseek' in company or 'deepseek' in model_code:
+            return 'deepseek'
+
+        if 'anthropic' in company or 'claude' in company or 'claude' in model_code:
+            return 'claude'
+
         # OpenAI model patterns
-        if any(pattern in model_code for pattern in ['gpt-', 'o1-', 'o3-', 'chatgpt']):
+        if 'openai' in company or any(pattern in model_code for pattern in ['gpt-', 'o1-', 'o3-', 'chatgpt']):
             return 'openai'
+
+        if 'google' in company or 'gemini' in company or 'gemini' in model_code:
+            return 'gemini'
 
         # Default to Gemini
         return 'gemini'

@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
-# Part of Softhealer Technologies.
+# Copyright (C) Softhealer Technologies Pvt. Ltd.
 
 from google.genai import types
 from unittest.mock import patch
 from odoo.tests.common import TransactionCase
 from odoo.addons.sh_ai_assistance.ai_processing.base_engine import BaseAiEngine
 from odoo.addons.sh_ai_assistance.ai_processing.engine_factory import AiEngineFactory
+from odoo.addons.sh_ai_assistance.ai_processing.claude_engine import ClaudeEngine
+from odoo.addons.sh_ai_assistance.ai_processing.deepseek_engine import DeepSeekEngine
 from odoo.addons.sh_ai_assistance.ai_processing.gemini_engine import GeminiEngine
 from odoo.addons.sh_ai_assistance.ai_processing.openai_engine import OpenAiEngine
 from odoo.addons.sh_ai_assistance.ai_processing.openrouter_engine import OpenRouterEngine
@@ -181,6 +183,7 @@ class TestAiSession(TransactionCase):
     def test_base_engine_duplicate_tool_loop_guard(self):
         """Repeated identical tool calls should be stopped deterministically."""
         engine = BaseAiEngine(self.env)
+        engine.max_duplicate_tool_calls = 2
         context = engine._create_turn_context('gemini')
 
         first = engine._check_loop_guards(context, 'search_records', {'model': 'res.users', 'count_only': True})
@@ -549,3 +552,20 @@ class TestAiSession(TransactionCase):
 
         self.assertFalse(result['success'])
         self.assertIn('API key', result['error'])
+
+    def test_deepseek_and_claude_provider_types_route_to_matching_engines(self):
+        deepseek_llm = self.env['sh.ai.llm'].create({
+            'name': 'DeepSeek Model',
+            'sh_company': 'DeepSeek',
+            'sh_model_code': 'deepseek-v4-flash',
+        })
+        claude_llm = self.env['sh.ai.llm'].create({
+            'name': 'Claude Model',
+            'sh_company': 'Anthropic',
+            'sh_model_code': 'claude-sonnet-4-6',
+        })
+
+        self.assertEqual(deepseek_llm._detect_provider_type(), 'deepseek')
+        self.assertEqual(claude_llm._detect_provider_type(), 'claude')
+        self.assertIsInstance(AiEngineFactory.get_engine(self.env, 'deepseek'), DeepSeekEngine)
+        self.assertIsInstance(AiEngineFactory.get_engine(self.env, 'claude'), ClaudeEngine)

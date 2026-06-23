@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) Softhealer Technologies.
+# Copyright (C) Softhealer Technologies Pvt. Ltd.
 
 from copy import deepcopy
 import json
@@ -1053,10 +1053,9 @@ def aggregate_records(env, model, operation, domain=None, field=None, group_by=N
                     group_val = group_dict.get(group_by)
                     
                     # Determine the aggregate key in Odoo 16
-                    # For count, it's usually [groupby]_count
-                    # For field:sum, it's usually just field
+                    # Since lazy=False is used in read_group, Odoo 16 groups count under '__count'
                     if operation == 'count':
-                        agg_key = f"{group_by.split(':')[0]}_count"
+                        agg_key = "__count"
                     else:
                         agg_key = field
                     
@@ -1068,6 +1067,8 @@ def aggregate_records(env, model, operation, domain=None, field=None, group_by=N
                         label = group_val[1] if len(group_val) > 1 else str(group_val[0])
                     else:
                         label = str(group_val)
+
+                    label = str(label)
 
                     groups.append({
                         "group": label,

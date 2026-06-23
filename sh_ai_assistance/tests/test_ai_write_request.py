@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Part of Softhealer Technologies.
+# Copyright (C) Softhealer Technologies Pvt. Ltd.
 
 from odoo import fields
 from odoo.tests.common import TransactionCase
@@ -175,7 +175,7 @@ class TestAiWriteRequest(TransactionCase):
             "name": "AI Limited User",
             "login": "ai_limited_user",
             "email": "ai_limited_user@example.com",
-            "group_ids": [fields.Command.set([internal_group.id, ai_user_group.id])],
+            "groups_id": [fields.Command.set([internal_group.id, ai_user_group.id])],
         })
 
         result = self.write_request_model.with_user(limited_user).prepare_update_from_ai(

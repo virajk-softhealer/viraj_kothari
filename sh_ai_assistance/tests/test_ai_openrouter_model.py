@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Part of Softhealer Technologies.
+# Copyright (C) Softhealer Technologies Pvt. Ltd.
 
 from unittest.mock import patch
 
@@ -183,10 +183,12 @@ class TestAiOpenrouterModel(TransactionCase):
         self.assertEqual(openrouter_llm.sh_api_key, "test-openrouter-key")
 
     def test_save_onboarding_default_model_assigns_openrouter_catalog_model(self):
+        self.env["sh.ai.llm"].search([("provider_type", "=", "openrouter")]).write({"active": False})
         openrouter_llm = self.env["sh.ai.llm"].create({
             "name": "OpenRouter",
             "provider_type": "openrouter",
             "sh_company": "OpenRouter",
+            "active": True,
         })
         openrouter_model = self.catalog_model.create({
             "name": "OpenAI: GPT-4o Mini",
@@ -202,3 +204,25 @@ class TestAiOpenrouterModel(TransactionCase):
         self.assertTrue(result["success"])
         self.assertEqual(openrouter_llm.openrouter_model_id, openrouter_model)
         self.assertTrue(openrouter_llm.is_default)
+
+    def test_verify_api_key_routes_deepseek_and_claude_providers(self):
+        deepseek_llm = self.env["sh.ai.llm"].create({
+            "name": "DeepSeek Model",
+            "sh_company": "DeepSeek",
+            "sh_model_code": "deepseek-v4-flash",
+        })
+        claude_llm = self.env["sh.ai.llm"].create({
+            "name": "Claude Model",
+            "sh_company": "Anthropic",
+            "sh_model_code": "claude-sonnet-4-6",
+        })
+
+        with patch.object(type(deepseek_llm), "_verify_deepseek_key", return_value={"success": True, "message": "ok"}) as mocked_deepseek:
+            result = deepseek_llm._verify_api_key("DeepSeek", "fake-deepseek-key")
+            self.assertTrue(result["success"])
+            mocked_deepseek.assert_called_once()
+
+        with patch.object(type(claude_llm), "_verify_claude_key", return_value={"success": True, "message": "ok"}) as mocked_claude:
+            result = claude_llm._verify_api_key("Anthropic", "fake-claude-key")
+            self.assertTrue(result["success"])
+            mocked_claude.assert_called_once()

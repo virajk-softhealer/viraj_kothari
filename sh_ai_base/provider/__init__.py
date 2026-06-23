@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) Softhealer Technologies.
+# Copyright (C) Softhealer Technologies Pvt. Ltd.
 
+from . import claude_provider
+from . import deepseek_provider
 from . import gemini_provider
 from . import openai_provider
 from . import openrouter_provider

@@ -1,0 +1,12 @@
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="DeepSeek">
+  <defs>
+    <linearGradient id="ds-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#1d4ed8"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="56" fill="url(#ds-bg)"/>
+  <circle cx="128" cy="128" r="72" fill="none" stroke="#93c5fd" stroke-width="18" opacity="0.85"/>
+  <path d="M92 164V92h42c24 0 42 16 42 36s-18 36-42 36H92zm28-22h14c11 0 18-7 18-14s-7-14-18-14h-14v28z" fill="#eff6ff"/>
+  <circle cx="178" cy="82" r="10" fill="#93c5fd"/>
+</svg>

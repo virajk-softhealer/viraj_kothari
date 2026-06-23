@@ -1,0 +1,137 @@
+/* AI Chat App Layout */
+
+.o-ai-Chat {
+    /* Ensure full viewport height and proper flexbox */
+    height: 100%;
+    max-height: 100%;
+    min-height: 0;
+    display: flex;
+    overflow: hidden; /* Prevent body scroll */
+}
+
+.o-ai-ChatSidebar {
+    /* Sidebar should be fixed width and full height */
+    flex: 0 0 280px; /* Don't grow or shrink */
+    min-width: 280px;
+    max-width: 280px;
+    height: 100%;
+    overflow-y: auto;
+    transition: all 0.3s ease;
+
+    &.collapsed {
+        flex: 0 0 60px;
+        min-width: 60px;
+        max-width: 60px;
+    }
+}
+
+/* Main content area */
+.o-ai-Chat > .flex-grow-1 {
+    /* Main content should take remaining space */
+    flex: 1 1 0%;
+    min-width: 0; /* Allow shrinking */
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+}
+
+/* Loading Screen */
+.ai-loading-screen {
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--o-view-background-color, #fff);
+    animation: loading-fade-in 0.3s ease;
+}
+
+@keyframes loading-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.ai-loading-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+}
+
+.ai-loading-icon {
+    font-size: 2.5rem;
+    color: #714b67;
+    opacity: 0.6;
+    animation: loading-pulse 2s ease-in-out infinite;
+}
+
+@keyframes loading-pulse {
+    0%, 100% { opacity: 0.4; transform: scale(1); }
+    50% { opacity: 0.8; transform: scale(1.05); }
+}
+
+.ai-loading-spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid #eee;
+    border-top-color: #714b67;
+    border-radius: 50%;
+    animation: loading-spin 0.8s linear infinite;
+}
+
+@keyframes loading-spin {
+    to { transform: rotate(360deg); }
+}
+
+.ai-loading-text {
+    font-size: 14px;
+    color: #999;
+    font-weight: 400;
+}
+
+/* Dark mode loading */
+.o_dark {
+    .ai-loading-screen {
+        background: var(--o-view-background-color, #1a1a2e);
+    }
+    .ai-loading-spinner {
+        border-color: #3a3a4e;
+        border-top-color: #714b67;
+    }
+    .ai-loading-text {
+        color: #666;
+    }
+}
+
+/* Responsive behavior */
+@media screen and (max-width: 768px) {
+    .o-ai-ChatSidebar {
+        /* Keep sidebar in normal layout flow to prevent overlap */
+        flex: 0 0 220px;
+        min-width: 220px;
+        max-width: 220px;
+        position: relative;
+        z-index: 1;
+
+        &.collapsed {
+            flex: 0 0 56px;
+            min-width: 56px;
+            max-width: 56px;
+            transform: none;
+        }
+    }
+
+    .o-ai-Chat > .flex-grow-1 {
+        margin-left: 0;
+        width: auto;
+    }
+}
+
+/* Ensure proper height inheritance */
+.o-ai-Chat,
+.o-ai-Chat .d-flex,
+.o-ai-Chat .flex-grow-1 {
+    min-height: 0; /* Critical for flexbox height calculations */
+}

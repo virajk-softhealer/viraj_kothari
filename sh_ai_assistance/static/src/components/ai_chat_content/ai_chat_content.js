@@ -139,6 +139,8 @@ export class AiChatContentComponent extends Component {
             return "ChatGPT models may make mistakes, so double-check outputs.";
         } else if (companyLower.includes('claude') || companyLower.includes('anthropic')) {
             return "Claude models may make mistakes, so double-check outputs.";
+        } else if (companyLower.includes('deepseek')) {
+            return "DeepSeek models may make mistakes, so double-check outputs.";
         }
 
         return `AI models from ${company} may make mistakes, so double-check outputs.`;

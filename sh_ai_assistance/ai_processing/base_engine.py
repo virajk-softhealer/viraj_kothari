@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Part of Softhealer Technologies.
+# Copyright (C) Softhealer Technologies Pvt. Ltd.
 
 import logging
 from collections import Counter
@@ -41,6 +41,20 @@ class BaseAiEngine:
             'openrouter': {
                 'tool_calling': True,
                 'structured_output': 'json_schema',
+                'streaming': True,
+                'usage_fields': True,
+                'cancellation': 'stream_close',
+            },
+            'deepseek': {
+                'tool_calling': True,
+                'structured_output': 'json_schema',
+                'streaming': True,
+                'usage_fields': True,
+                'cancellation': 'stream_close',
+            },
+            'claude': {
+                'tool_calling': True,
+                'structured_output': 'anthropic_messages',
                 'streaming': True,
                 'usage_fields': True,
                 'cancellation': 'stream_close',
