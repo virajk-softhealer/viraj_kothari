@@ -1,0 +1,20 @@
+# -*- coding: utf-8 -*-
+# Part of Softhealer Technologies.
+
+from .gemini_engine import GeminiEngine
+from .openai_engine import OpenAiEngine
+from .openrouter_engine import OpenRouterEngine
+
+class AiEngineFactory:
+    """
+    Factory to create the appropriate AI Engine based on provider type.
+    """
+    
+    @staticmethod
+    def get_engine(env, provider_type):
+        if provider_type == 'openai':
+            return OpenAiEngine(env)
+        if provider_type == 'openrouter':
+            return OpenRouterEngine(env)
+        # Default to Gemini
+        return GeminiEngine(env)

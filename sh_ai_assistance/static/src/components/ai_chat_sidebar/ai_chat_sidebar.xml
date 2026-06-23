@@ -1,0 +1,401 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="sh_ai_assistance.AiChatSidebarTemplate" owl="1">
+        <div class="o-ai-ChatSidebar h-100 d-flex flex-column bg-white"
+             t-on-click="onSidebarShellClick"
+             t-att-class="props.isCollapsed ? 'collapsed' : ''">
+
+            <!-- Sidebar Header -->
+            <div class="px-3 py-4 sidebar-header">
+                <div class="d-flex align-items-center justify-content-between gap-2">
+                    <t t-if="!props.isCollapsed">
+                        <div class="d-flex flex-column">
+                            <h5 class="mb-0 fw-bold text-dark">Chats</h5>
+                            <div class="sidebar-subtitle text-muted small">Organize conversations with projects</div>
+                        </div>
+                    </t>
+                    <div class="d-flex align-items-center gap-1">
+                        <t t-if="!props.isCollapsed and hasProjects">
+                            <button class="btn btn-link p-1 text-muted sidebar-header-action"
+                                    t-on-click="onExpandAllProjectsClick"
+                                    title="Expand all projects">
+                                <i class="fa fa-plus-square-o"/>
+                            </button>
+                            <button class="btn btn-link p-1 text-muted sidebar-header-action"
+                                    t-on-click="onCollapseAllProjectsClick"
+                                    title="Collapse all projects">
+                                <i class="fa fa-minus-square-o"/>
+                            </button>
+                        </t>
+                        <button class="btn btn-link p-1 text-muted sidebar-header-action"
+                                t-on-click="onToggleSidebarClick"
+                                title="Toggle Sidebar">
+                            <i t-att-class="props.isCollapsed ? 'fa fa-chevron-right' : 'fa fa-chevron-left'"
+                               style="font-size: 16px;"/>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <t t-if="!props.isCollapsed">
+                <!-- New Conversation Button -->
+                <div class="px-3 mb-2">
+                    <div t-att-title="newChatButtonTooltip" class="d-inline-block w-100">
+                        <button class="btn w-100 d-flex align-items-center justify-content-center py-2 rounded-3"
+                                t-att-class="shouldDisableNewChat ? 'btn-outline-secondary' : 'btn-outline-primary'"
+                                t-att-disabled="shouldDisableNewChat"
+                                t-on-click="onNewChatClick">
+                            <i t-att-class="props.isLoading ? 'fa fa-spinner fa-spin me-2' : 'fa fa-plus me-2'"/>
+                            <span t-if="!shouldDisableNewChat">Start New Conversation</span>
+                            <span t-elif="props.isLoading">Creating...</span>
+                            <span t-else="">Chat Open</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- New Project Button -->
+                <div class="px-3 mb-3">
+                    <button class="btn btn-outline-secondary w-100 d-flex align-items-center justify-content-center py-2 rounded-3"
+                            t-on-click="onCreateTopLevelProjectClick">
+                        <i class="fa fa-folder-o me-2"/>
+                        <span>New Project</span>
+                    </button>
+                    <div class="text-muted small mt-2 sidebar-project-hint">
+                        Drag chats into projects or use the session menu to reorganize them.
+                    </div>
+                </div>
+
+                <!-- Sessions List (Tree View) -->
+                <div class="flex-grow-1 overflow-auto sh-ai-chat-tree"
+                     t-att-class="isDropTarget('root') ? 'is-drop-target' : ''"
+                     t-ref="chatTreeScroll"
+                     t-on-dragenter="onDragEnterTree"
+                     t-on-dragover="onDragOverTree"
+                     t-on-drop="onDropUnfiled"
+                     t-on-dragleave="onDragLeaveDropArea">
+                    <div class="px-3 pt-2 pb-1 tree-section-label tree-section-header"
+                         t-att-class="isDropTarget('root') ? 'is-drop-target' : ''"
+                         t-on-dragenter.stop="onDragEnterRoot"
+                         t-on-dragover.stop="onDragOverTree"
+                         t-on-drop.stop="onDropUnfiled"
+                         t-on-dragleave="onDragLeaveDropArea">
+                        <button type="button"
+                                class="section-toggle-btn"
+                                t-on-click="toggleProjectsSection"
+                                t-att-title="state.projectsSectionExpanded ? 'Collapse projects' : 'Expand projects'">
+                            <i t-att-class="state.projectsSectionExpanded ? 'fa fa-chevron-down' : 'fa fa-chevron-right'"/>
+                        </button>
+                        <span>Projects</span>
+                        <span class="section-count">
+                            <t t-esc="props.projectTree ? props.projectTree.totalProjects : 0"/> total
+                        </span>
+                    </div>
+                    
+                    <t t-if="state.projectsSectionExpanded">
+                        <!-- Top-level project creation -->
+                        <t t-if="state.creatingProjectActive and state.creatingProjectParentId === null">
+                            <div class="px-3 mb-2">
+                                <div class="inline-project-editor shadow-sm">
+                                    <i class="fa fa-folder-o me-2 text-warning"/>
+                                    <input type="text"
+                                           class="form-control form-control-sm inline-project-input"
+                                           t-ref="inlineProjectInput"
+                                           placeholder="Project name"
+                                           t-on-input="(event) => this.onInlineProjectInputChange(event, 'create')"
+                                           t-on-keydown="(event) => this.onInlineProjectInputKeydown(event, 'create')"/>
+                                    <button class="btn btn-sm btn-outline-secondary"
+                                            t-on-click="cancelInlineProjectEdit">
+                                        Cancel
+                                    </button>
+                                </div>
+                            </div>
+                        </t>
+                        
+                        <!-- Recursive Project Tree -->
+                        <t t-if="props.projectTree &amp;&amp; props.projectTree.roots.length">
+                            <t t-call="sh_ai_assistance.AiChatSidebarProjectTree">
+                                <t t-set="nodes" t-value="props.projectTree.roots"/>
+                                <t t-set="depth" t-value="0"/>
+                            </t>
+                        </t>
+                    </t>
+
+                    <!-- Unfiled Chats Section -->
+                    <div class="px-3 pt-2 pb-1 tree-section-label tree-section-header">
+                        <button type="button"
+                                class="section-toggle-btn"
+                                t-on-click="toggleChatsSection"
+                                t-att-title="state.chatsSectionExpanded ? 'Collapse chats' : 'Expand chats'">
+                            <i t-att-class="state.chatsSectionExpanded ? 'fa fa-chevron-down' : 'fa fa-chevron-right'"/>
+                        </button>
+                        <span>Chats</span>
+                        <span class="section-count">
+                            <t t-esc="props.projectTree ? props.projectTree.unfiledSessions.length : 0"/> unfiled
+                        </span>
+                    </div>
+                    
+                    <t t-if="state.chatsSectionExpanded">
+                        <div class="px-3 pt-2 pb-2">
+                            <div class="unfiled-drop-zone"
+                                 t-att-class="isDropTarget('unfiled') ? 'is-drop-target' : ''"
+                                 t-on-dragenter="onDragEnterUnfiled"
+                                 t-on-dragover="onDragOverUnfiled"
+                                 t-on-drop="onDropUnfiled"
+                                 t-on-dragleave="onDragLeaveDropArea">
+                                <i class="fa fa-ban me-2"/>
+                                <span>Drop here to remove from project</span>
+                            </div>
+                        </div>
+
+                        <t t-if="props.projectTree &amp;&amp; props.projectTree.unfiledSessions.length">
+                            <div class="px-3">
+                                <t t-foreach="props.projectTree.unfiledSessions" t-as="session" t-key="session.id">
+                                    <t t-set="depth" t-value="0"/>
+                                    <t t-call="sh_ai_assistance.AiChatSidebarSessionItem"/>
+                                </t>
+                            </div>
+                        </t>
+                    </t>
+                </div>
+
+                <!-- Import Chat Button at Bottom -->
+                <div class="px-3 py-3 border-top bg-light">
+                    <button class="btn btn-primary w-100 d-flex align-items-center justify-content-center py-2 rounded-3 shadow-sm"
+                            style="font-weight: 500;"
+                            t-on-click="onImportChatClick">
+                        <i class="fa fa-download me-2" style="font-size: 14px;"/>
+                        <span>Import Chat</span>
+                    </button>
+                    <input type="file"
+                           t-ref="importFileInput"
+                           class="d-none"
+                           accept=".json"
+                           t-on-change="onFileSelected"/>
+                </div>
+            </t>
+
+            <!-- Collapsed state - minimal -->
+            <t t-if="props.isCollapsed">
+                <div class="collapsed-sidebar-minimal d-flex flex-column align-items-center justify-content-center h-100">
+                    <div class="collapsed-summary-label"
+                         t-att-title="props.sessions.length + ' Conversations'">
+                        <t t-esc="props.sessions.length"/> Conversations
+                    </div>
+                </div>
+            </t>
+        </div>
+    </t>
+
+    <!-- Project Tree Template (Recursive) -->
+    <t t-name="sh_ai_assistance.AiChatSidebarProjectTree" owl="1">
+        <t t-foreach="nodes or []" t-as="node" t-key="node.id">
+            <div class="project-node"
+                 t-att-class="(isDropTarget('project', node.id) or isDropTarget('project_area', node.id)) ? 'is-drop-target' : ''"
+                 t-on-dragenter.stop="(event) => this.onDragEnterProjectArea(event, node.id)"
+                 t-on-dragover.stop="(event) => this.onDragOverProjectArea(event, node.id)"
+                 t-on-drop.stop="(event) => this.onDropOnProjectArea(event, node.id)">
+                
+                <div class="project-item mb-2 px-3 py-2 cursor-pointer position-relative d-flex align-items-center"
+                     t-att-class="(node.expanded ? 'project-open' : 'project-closed') + (isDropTarget('project', node.id) ? ' is-drop-target' : '') + (state.openProjectMenuId === node.id ? ' is-menu-open' : '') + (state.draggedProjectId === node.id ? ' is-dragging' : '')"
+                     t-on-click="() => this.onProjectClick(node.id)"
+                     draggable="true"
+                     t-on-dragstart="(event) => this.onProjectDragStart(event, node.id)"
+                     t-on-dragend="onProjectDragEnd"
+                     t-on-dragenter.stop="(event) => this.onDragEnterProject(event, node.id)"
+                     t-on-dragover.stop="(event) => this.onDragOverProject(event, node.id)"
+                     t-on-drop.stop="(event) => this.onDropOnProject(event, node.id)"
+                     t-on-dragleave="onDragLeaveDropArea"
+                     t-att-style="'padding-left: ' + (12 + (depth * 16)) + 'px;'">
+                    
+                    <div class="project-label flex-grow-1 me-2 d-flex align-items-center gap-2">
+                        <button type="button" class="project-toggle-btn" t-on-click.stop="() => this.onProjectClick(node.id)">
+                            <i t-att-class="node.expanded ? 'fa fa-chevron-down project-toggle' : 'fa fa-chevron-right project-toggle'"/>
+                        </button>
+                        <i class="fa fa-folder-o project-icon"/>
+                        
+                        <t t-if="state.editingProjectId === node.id">
+                            <div class="project-inline-edit flex-grow-1 d-flex align-items-center gap-2" t-on-click.stop="">
+                                <input type="text"
+                                       class="form-control form-control-sm inline-project-input"
+                                       t-ref="inlineProjectInput"
+                                       t-att-value="state.editingProjectName"
+                                       t-on-input="(event) => this.onInlineProjectInputChange(event, 'rename')"
+                                       t-on-keydown="(event) => this.onInlineProjectInputKeydown(event, 'rename')"/>
+                                <button class="btn btn-sm btn-outline-secondary"
+                                        t-on-click="cancelInlineProjectEdit">
+                                    Cancel
+                                </button>
+                            </div>
+                        </t>
+                        <t t-else="">
+                            <div class="project-text-block">
+                                <div class="project-name-text text-truncate" t-esc="node.name"/>
+                                <div class="project-meta text-muted small">
+                                    <t t-esc="node.sessionCount"/> chats
+                                    <t t-if="node.childrenProjects.length">
+                                        · <t t-esc="node.childrenProjects.length"/> sub-projects
+                                    </t>
+                                </div>
+                            </div>
+                        </t>
+                    </div>
+
+                    <div class="project-actions flex-shrink-0 position-relative">
+                        <button class="btn btn-sm p-1 project-action-trigger"
+                                style="border: none; background: transparent; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;"
+                                t-on-click.stop="(event) => this.onProjectMenuClick(event, node.id)"
+                                title="Project actions">
+                            <i class="fa fa-ellipsis-h" style="font-size: 12px;"/>
+                        </button>
+
+                        <div t-if="state.openProjectMenuId === node.id" class="session-context-menu project-context-menu shadow-lg">
+                            <button class="session-context-menu-item" t-on-click="(event) => this.onCreateChatInProjectClick(event, node.id)">
+                                Create Chat
+                            </button>
+                            <button class="session-context-menu-item" t-on-click="(event) => this.onRenameProjectClick(event, node)">
+                                Rename Project
+                            </button>
+                            <button class="session-context-menu-item" t-on-click="(event) => this.onToggleProjectMovePicker(event, node.id)">
+                                Move to Project
+                            </button>
+                            <button class="session-context-menu-item" t-on-click="(event) => this.onCreateProjectClick(event, null, node.id, node.expanded)">
+                                Create Sub Project
+                            </button>
+                            <div class="dropdown-divider"/>
+                            <button class="session-context-menu-item text-danger" t-on-click="(event) => this.onDeleteProjectClick(event, node.id)">
+                                Delete Project
+                            </button>
+
+                            <div t-if="state.activeProjectPickerProjectId === node.id" class="session-project-picker">
+                                <button class="session-context-menu-item text-muted"
+                                        t-on-click="(event) => this.onMoveProjectToProjectClick(event, node.id, null)">
+                                    No Project (Root)
+                                </button>
+                                <t t-foreach="getProjectMoveTargets(node.id)" t-as="project" t-key="project.id">
+                                    <button class="session-context-menu-item project-picker-item"
+                                            t-on-click="(event) => this.onMoveProjectToProjectClick(event, node.id, project.id)"
+                                            t-att-style="'padding-left: ' + (12 + (project.depth * 12)) + 'px;'">
+                                        <i class="fa fa-folder-o me-2 text-muted"/>
+                                        <t t-esc="project.labelPath"/>
+                                    </button>
+                                </t>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div t-if="node.expanded" class="project-children">
+                    <!-- Inline create subproject -->
+                    <t t-if="state.creatingProjectActive and state.creatingProjectParentId === node.id">
+                        <div class="project-create-inline">
+                            <div class="inline-project-editor shadow-sm">
+                                <i class="fa fa-folder-o me-2 text-warning"/>
+                                <input type="text"
+                                       class="form-control form-control-sm inline-project-input"
+                                       t-ref="inlineProjectInput"
+                                       placeholder="Subproject name"
+                                       t-on-input="(event) => this.onInlineProjectInputChange(event, 'create')"
+                                       t-on-keydown="(event) => this.onInlineProjectInputKeydown(event, 'create')"/>
+                                <button class="btn btn-sm btn-outline-secondary"
+                                        t-on-click="cancelInlineProjectEdit">
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    </t>
+                    
+                    <!-- Subprojects -->
+                    <t t-if="node.childrenProjects.length">
+                        <t t-call="sh_ai_assistance.AiChatSidebarProjectTree">
+                            <t t-set="nodes" t-value="node.childrenProjects"/>
+                            <t t-set="depth" t-value="depth + 1"/>
+                        </t>
+                    </t>
+
+                    <!-- Sessions in Project -->
+                    <t t-if="node.sessions.length">
+                        <div class="project-sessions">
+                            <t t-foreach="node.sessions" t-as="session" t-key="session.id">
+                                <t t-set="depth" t-value="depth + 1"/>
+                                <t t-call="sh_ai_assistance.AiChatSidebarSessionItem"/>
+                            </t>
+                        </div>
+                    </t>
+                </div>
+            </div>
+        </t>
+    </t>
+
+    <!-- Session Item Template -->
+    <t t-name="sh_ai_assistance.AiChatSidebarSessionItem" owl="1">
+        <div class="session-item session-tree-item mb-2 px-3 py-2 cursor-pointer position-relative d-flex align-items-center"
+             t-att-class="(isCurrentSession(session.access_token) ? 'active-session' : 'inactive-session') + (isDraggedSession(session.access_token) ? ' is-dragging' : '') + (depth > 0 ? ' session-item-nested' : '') + (state.openSessionMenuToken === session.access_token || state.activeProjectPickerSessionToken === session.access_token ? ' is-menu-open' : '')"
+             t-on-click="() => this.onSessionClick(session.access_token)"
+             t-on-mouseenter="() => this.onSessionMouseEnter(session.access_token)"
+             t-on-mouseleave="() => this.onSessionMouseLeave()"
+             draggable="true"
+             t-on-dragstart="(event) => this.onSessionDragStart(event, session.access_token)"
+             t-on-dragend="onSessionDragEnd">
+
+            <div class="flex-grow-1 me-2" style="min-width: 0; overflow: hidden;">
+                <div class="d-flex align-items-center mb-1">
+                    <div class="fw-medium session-name-text flex-grow-1"
+                         style="font-size: 14px; min-width: 0;">
+                        <t t-esc="session.name"/>
+                    </div>
+                </div>
+
+                <div class="d-flex align-items-center justify-content-between">
+                    <div class="text-muted small text-truncate" style="flex: 1; min-width: 0;">
+                        <t t-esc="formatDate(session.last_message_date)"/>
+                    </div>
+                    <div class="text-muted small flex-shrink-0" t-if="session.message_count > 0">
+                        <i class="fa fa-comment-o me-1" style="font-size: 10px;"/>
+                        <t t-esc="session.message_count"/>
+                    </div>
+                </div>
+            </div>
+
+            <div class="session-actions flex-shrink-0"
+                 t-att-class="isSessionHovered(session.access_token) || state.openSessionMenuToken === session.access_token ? 'd-flex' : 'd-none'">
+                <button class="btn btn-sm p-1"
+                        t-on-click.stop="(event) => this.onSessionMenuClick(event, session.access_token)"
+                        title="Session actions">
+                    <i class="fa fa-ellipsis-h" style="font-size: 12px; color: #6c757d;"/>
+                </button>
+
+                <div t-if="state.openSessionMenuToken === session.access_token" class="session-context-menu shadow-lg">
+                    <button class="session-context-menu-item" t-on-click="(event) => this.onToggleProjectPicker(event, session.access_token)">
+                        Move to Project
+                    </button>
+                    <button class="session-context-menu-item" t-on-click="(event) => this.onCreateProjectClick(event, session.access_token)">
+                        Create new Project
+                    </button>
+                    <div class="dropdown-divider"/>
+                    <button class="session-context-menu-item" t-on-click="(event) => this.onRenameSessionClick(event, session.access_token)">
+                        Rename
+                    </button>
+                    <button class="session-context-menu-item text-danger"
+                            t-on-click="(event) => this.onDeleteClick(event, session.access_token)">
+                        Delete
+                    </button>
+
+                    <div t-if="state.activeProjectPickerSessionToken === session.access_token" class="session-project-picker">
+                        <button class="session-context-menu-item text-muted"
+                                t-on-click="(event) => this.onMoveSessionToProjectClick(event, session.access_token, null)">
+                            No Project
+                        </button>
+                        <t t-foreach="flattenedProjects" t-as="project" t-key="project.id">
+                            <button class="session-context-menu-item project-picker-item"
+                                    t-on-click="(event) => this.onMoveSessionToProjectClick(event, session.access_token, project.id)"
+                                    t-att-style="'padding-left: ' + (12 + (project.depth * 12)) + 'px;'">
+                                <i class="fa fa-folder-o me-2 text-muted"/>
+                                <t t-esc="project.labelPath"/>
+                            </button>
+                        </t>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </t>
+</templates>
