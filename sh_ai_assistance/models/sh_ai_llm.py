@@ -4,6 +4,7 @@
 import logging
 
 from odoo import models, fields, api
+from openai import OpenAI
 
 _logger = logging.getLogger(__name__)
 
@@ -608,16 +609,25 @@ class ShAiLlm(models.Model):
             return {'success': False, 'message': 'Please enter an API key.'}
         
         provider_type = 'gemini'
-        if provider_company and provider_company.lower() == 'openrouter':
+        company_lower = (provider_company or '').strip().lower()
+        if company_lower == 'openrouter':
             provider_type = 'openrouter'
-        if provider_company and provider_company.lower() == 'openai':
+        elif company_lower == 'openai':
             provider_type = 'openai'
+        elif company_lower == 'deepseek':
+            provider_type = 'deepseek'
+        elif company_lower in ('anthropic', 'claude'):
+            provider_type = 'claude'
         
         try:
             if provider_type == 'openai':
                 return self._verify_openai_key(api_key)
-            if provider_type == 'openrouter':
+            elif provider_type == 'openrouter':
                 return self._verify_openrouter_key(api_key)
+            elif provider_type == 'deepseek':
+                return self._verify_deepseek_key(api_key)
+            elif provider_type == 'claude':
+                return self._verify_claude_key(api_key)
             else:
                 return self._verify_gemini_key(api_key)
         except Exception as e:
@@ -652,7 +662,7 @@ class ShAiLlm(models.Model):
     def _verify_openai_key(self, api_key):
         """Test an OpenAI API key with a minimal request"""
         try:
-            from openai import OpenAI
+            
             client = OpenAI(api_key=api_key)
             response = client.chat.completions.create(
                 model='gpt-4o-mini',
@@ -674,7 +684,6 @@ class ShAiLlm(models.Model):
     def _verify_openrouter_key(self, api_key):
         """Test an OpenRouter API key with a minimal request"""
         try:
-            from openai import OpenAI
             client = OpenAI(
                 api_key=api_key,
                 base_url='https://openrouter.ai/api/v1',
@@ -691,6 +700,66 @@ class ShAiLlm(models.Model):
             if response and response.choices:
                 return {'success': True, 'message': 'OpenRouter API key is valid!'}
             return {'success': False, 'message': 'OpenRouter returned an empty response. Please check your API key.'}
+        except Exception as e:
+            error_msg = str(e).lower()
+            if 'api_key' in error_msg or 'invalid' in error_msg or '401' in error_msg or 'authentication' in error_msg:
+                return {'success': False, 'message': 'Invalid API key. Please check and try again.'}
+            if 'quota' in error_msg or '429' in error_msg:
+                return {'success': True, 'message': 'API key is valid (quota limit reached, but key accepted).'}
+            return {'success': False, 'message': f'Connection error: {str(e)}'}
+
+    @api.model
+    def _verify_deepseek_key(self, api_key):
+        """Test a DeepSeek API key with a minimal request"""
+        try:
+            client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+            response = client.chat.completions.create(
+                model='deepseek-chat',
+                messages=[{'role': 'user', 'content': 'Say "hello" in one word.'}],
+                max_tokens=5,
+            )
+            if response and response.choices:
+                return {'success': True, 'message': 'DeepSeek API key is valid!'}
+            return {'success': False, 'message': 'DeepSeek returned an empty response. Please check your API key.'}
+        except Exception as e:
+            error_msg = str(e).lower()
+            if 'api_key' in error_msg or 'invalid' in error_msg or '401' in error_msg or 'authentication' in error_msg:
+                return {'success': False, 'message': 'Invalid API key. Please check and try again.'}
+            if 'quota' in error_msg or '429' in error_msg:
+                return {'success': True, 'message': 'API key is valid (quota limit reached, but key accepted).'}
+            return {'success': False, 'message': f'Connection error: {str(e)}'}
+
+    @api.model
+    def _verify_claude_key(self, api_key):
+        """Test an Anthropic Claude API key with a minimal request"""
+        import urllib.request
+        import json
+        import ssl
+        import certifi
+        url = "https://api.anthropic.com/v1/messages"
+        headers = {
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json"
+        }
+        data = {
+            "model": "claude-opus-4-7",
+            "messages": [{"role": "user", "content": "Say 'hello' in one word."}],
+            "max_tokens": 5
+        }
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(data).encode("utf-8"),
+            headers=headers,
+            method="POST"
+        )
+        ssl_context = ssl.create_default_context(cafile=certifi.where())
+        try:
+            with urllib.request.urlopen(req, timeout=10, context=ssl_context) as response:
+                res = json.loads(response.read().decode("utf-8"))
+                if res.get("content"):
+                    return {'success': True, 'message': 'Claude API key is valid!'}
+            return {'success': False, 'message': 'Claude returned an empty response. Please check your API key.'}
         except Exception as e:
             error_msg = str(e).lower()
             if 'api_key' in error_msg or 'invalid' in error_msg or '401' in error_msg or 'authentication' in error_msg:
