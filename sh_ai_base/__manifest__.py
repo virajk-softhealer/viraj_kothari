@@ -7,7 +7,7 @@
     "license": "OPL-1",
     'summary': 'AI base app',
     'description': 'This is the only base app for AI apps.',
-    "version": "19.0.5.0.0",
+    "version": "19.0.6.0.0",
     'depends': ['web','mail'],
     'external_dependencies': {
         'python': [
