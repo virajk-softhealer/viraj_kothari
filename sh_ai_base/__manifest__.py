@@ -1,20 +1,35 @@
 {
-    'name': 'AI Base',
-    'author': 'Softhealer Technologies',
-    'website': 'https://www.softhealer.com',
-    'support': 'support@softhealer.com',
-    'category': 'Extra Tools',
-    'license': 'OPL-1',
+    "name": "AI Base",
+    "author": "Softhealer Technologies",
+    "website": "https://www.softhealer.com",
+    "support": "support@softhealer.com",
+    "category": "Extra Tools",
+    "license": "OPL-1",
     'summary': 'AI base app',
     'description': 'This is the only base app for AI apps.',
-    'version': '19.0.5.0.0',
-    'depends': ['web', 'mail'],
-    'external_dependencies': {'python': ['certifi', 'openai', 'google-genai']},
-    'data': ['security/sh_ai_groups.xml', 'security/ir.model.access.csv', 'data/demo_llm_provider.xml', 'views/sh_ai_llm_views.xml'],
-    'assets': {'web.assets_backend': ['sh_ai_base/static/src/js/boolean_toggle.js']},
+    "version": "19.0.5.0.0",
+    'depends': ['web','mail'],
+    'external_dependencies': {
+        'python': [
+            'certifi',
+            'openai',
+            'google-genai',
+        ]
+    },
+    'data': [
+        "security/sh_ai_groups.xml",
+        "security/ir.model.access.csv",
+        "data/demo_llm_provider.xml",
+        "views/sh_ai_llm_views.xml",
+        ],
+    'assets': {
+        'web.assets_backend': [
+            'sh_ai_base/static/src/js/boolean_toggle.js'
+        ],
+    },
     'installable': True,
     'application': True,
-    'images': ['static/description/background.gif'],
-    'price': 12,
-    'currency': 'EUR'
+    "images": ["static/description/background.gif", ],
+    "price": 12,
+    "currency": "EUR"
 }

@@ -1,12 +1,64 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) Softhealer Technologies.
+# Copyright (C) Softhealer Technologies Pvt. Ltd.
 
-from copy import deepcopy
 import json
 import logging
-from odoo.exceptions import AccessError
+import os
+from copy import deepcopy
+
+from odoo.exceptions import AccessError, ValidationError
 
 _logger = logging.getLogger(__name__)
+
+_MANAGE_MODULE_ALLOWED_TEXT_EXTENSIONS = {
+    ".xml",
+    ".csv",
+    ".sql",
+    ".po",
+    ".js",
+    ".css",
+    ".scss",
+    ".json",
+    ".html",
+    ".txt",
+    ".md",
+    ".rst",
+}
+_MANAGE_MODULE_ALLOWED_BINARY_EXTENSIONS = {
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".svg",
+    ".webp",
+    ".ico",
+}
+_MANAGE_MODULE_REQUIRED_FILES = {"__manifest__.py"}
+_BLOCKED_MCP_CONTROL_MODELS = {
+    "sh.ai.mcp.server",
+    "sh.ai.mcp.oauth.code",
+    "sh.ai.mcp.oauth.token",
+    "sh.ai.mcp.client.state",
+    "sh.ai.mcp.session",
+    "sh.ai.mcp.blocked.field.rule",
+    "sh.ai.mcp.tool.access.rule",
+    "sh.ai.mcp.execution.log",
+}
+
+
+def _get_blocked_mcp_control_models():
+    """Return the internal MCP control models that must never be exposed through MCP tools."""
+    return set(_BLOCKED_MCP_CONTROL_MODELS)
+
+
+def _get_blocked_mcp_model_error(model_name):
+    return "AI access to internal MCP control model '%s' is blocked." % model_name
+
+
+def _validate_mcp_model_allowed(model_name):
+    if model_name in _get_blocked_mcp_control_models():
+        return _get_blocked_mcp_model_error(model_name)
+    return None
 
 def fuzzy_lookup_declaration():
     """
@@ -19,32 +71,86 @@ def fuzzy_lookup_declaration():
         "parameters": {
             "type": "object",
             "properties": {
+                "queries": {
+                    "anyOf": [
+                        {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "model": {"type": "string"},
+                                    "search_term": {"type": "string"},
+                                    "limit": {"type": "integer"}
+                                },
+                                "required": ["model", "search_term"],
+                                "additionalProperties": False
+                            }
+                        },
+                        {"type": "null"}
+                    ],
+                    "description": "A list of lookups to execute. Allows resolving multiple names across different models in a single call."
+                },
                 "model": {
-                    "type": "string",
-                    "description": "The Odoo model to search (e.g., 'hr.department', 'res.partner')",
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "description": "The Odoo model to search (e.g., 'hr.department', 'res.partner'). Required if not using 'queries'.",
                 },
                 "search_term": {
-                    "type": "string",
-                    "description": "The name/term to search for (e.g., 'Treasure Department')",
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "description": "The name/term to search for (e.g., 'Treasure Department'). Required if not using 'queries'.",
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "Maximum candidates to return (default: 5)",
+                    "description": "Maximum candidates to return per lookup (default: 5)",
                 }
             },
-            "required": ["model", "search_term"],
+            "required": [],
             "additionalProperties": False,
         },
     }
 
 
-def fuzzy_lookup(env, model, search_term, limit=5):
+def fuzzy_lookup(env, model=None, search_term=None, limit=5, queries=None):
     """
     Fully dynamic name-to-ID resolver.
     Searches across ALL text-based fields dynamically.
     No hardcoded suffixes or field names.
+    Supports batch lookup via 'queries'.
     """
     try:
+        if queries:
+            if not isinstance(queries, list):
+                return {"success": False, "error": "'queries' must be a list of objects.", "model": "mixed"}
+            
+            results = []
+            for query in queries:
+                q_model = query.get("model")
+                q_term = query.get("search_term")
+                q_limit = query.get("limit", 5)
+                
+                if not q_model or not q_term:
+                    return {"success": False, "error": "Each query must contain 'model' and 'search_term'."}
+                
+                # Recursive call
+                sub_res = fuzzy_lookup(env, model=q_model, search_term=q_term, limit=q_limit)
+                results.append({
+                    "model": q_model,
+                    "search_term": q_term,
+                    "success": sub_res.get("success", False),
+                    "error": sub_res.get("error"),
+                    "results": sub_res.get("results", [])
+                })
+            return {
+                "success": True,
+                "model": "mixed",
+                "queries": results
+            }
+
+        if not model or not search_term:
+            return {"success": False, "error": "Must provide either 'queries' or both 'model' and 'search_term'."}
+
+        blocked_error = _validate_mcp_model_allowed(model)
+        if blocked_error:
+            return {"success": False, "error": blocked_error, "results": []}
         try:
             Model = env[model]
         except KeyError:
@@ -99,12 +205,14 @@ def fuzzy_lookup(env, model, search_term, limit=5):
         if not results:
             results = Model.search(get_or_domain(clean_term, 'ilike'), limit=limit)
             
-        # Strategy C: Word-by-word
+        # Strategy C: All words combined (AND logic)
         if not results and ' ' in clean_term:
-            for word in clean_term.split():
-                if len(word) > 2:
-                    results = Model.search(get_or_domain(word, 'ilike'), limit=limit)
-                    if results: break
+            words = [w for w in clean_term.split() if len(w) > 2]
+            if words:
+                combined_domain = []
+                for word in words:
+                    combined_domain.extend(get_or_domain(word, 'ilike'))
+                results = Model.search(combined_domain, limit=limit)
 
         return {
             "success": True,
@@ -327,8 +435,57 @@ def get_search_records_declaration():
         "parameters": {
             "type": "object",
             "properties": {
+                "queries": {
+                    "anyOf": [
+                        {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "model": {"type": "string"},
+                                    "domain": {
+                                        "anyOf": [
+                                            {
+                                                "type": "array",
+                                                "items": {
+                                                    "anyOf": [
+                                                        {"type": "string"},
+                                                        {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "anyOf": [
+                                                                    {"type": "string"},
+                                                                    {"type": "number"},
+                                                                    {"type": "boolean"},
+                                                                    {"type": "array", "items": {"anyOf": [{"type": "string"}, {"type": "number"}]}}
+                                                                ]
+                                                            }
+                                                        }
+                                                    ]
+                                                }
+                                            },
+                                            {"type": "null"}
+                                        ]
+                                    },
+                                    "fields": {
+                                        "anyOf": [{"type": "array", "items": {"type": "string"}}, {"type": "null"}]
+                                    },
+                                    "limit": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
+                                    "order": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                                    "offset": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
+                                    "group_by": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                                    "count_only": {"anyOf": [{"type": "boolean"}, {"type": "null"}]}
+                                },
+                                "required": ["model", "domain", "fields", "limit", "order", "offset", "group_by", "count_only"],
+                                "additionalProperties": False,
+                            }
+                        },
+                        {"type": "null"}
+                    ],
+                    "description": "A list of queries to execute. Allows searching multiple models in a single call.",
+                },
                 "model": {
-                    "type": "string",
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
                     "description": "The technical name of the Odoo model to search (e.g., 'sale.order', 'res.partner')",
                 },
                 "domain": {
@@ -387,13 +544,13 @@ def get_search_records_declaration():
                     "description": "Set to true if you only need the count. Pass null/false if actual data needed.",
                 }
             },
-            "required": ["model", "domain", "fields", "limit", "order", "offset", "group_by", "count_only"],
+            "required": ["queries", "model", "domain", "fields", "limit", "order", "offset", "group_by", "count_only"],
             "additionalProperties": False,
         },
     }
 
 
-def search_records(env, model, domain=None, fields=None, limit=None, order=None, offset=0, group_by=None, count_only=False):
+def search_records(env, model=None, domain=None, fields=None, limit=None, order=None, offset=0, group_by=None, count_only=False, queries=None):
     """
     Enhanced search_records with superior performance and security.
 
@@ -410,11 +567,57 @@ def search_records(env, model, domain=None, fields=None, limit=None, order=None,
         offset: Number of records to skip (for pagination)
         group_by: Field name to group by (for list view grouping)
         count_only: Return only count (no records)
+        queries: List of search queries to execute in a single call.
 
     Returns:
         dict with success, count, records, and optional group_by
     """
     try:
+        if queries:
+            if not isinstance(queries, list):
+                return {"success": False, "error": "'queries' must be a list of objects.", "model": "mixed"}
+            
+            results = []
+            for query in queries:
+                q_model = query.get("model")
+                if not q_model:
+                    return {"success": False, "error": "Each item in 'queries' must contain 'model'.", "model": "mixed"}
+                
+                # Recursive call for each sub-query
+                q_result = search_records(
+                    env,
+                    model=q_model,
+                    domain=query.get("domain"),
+                    fields=query.get("fields"),
+                    limit=query.get("limit"),
+                    order=query.get("order"),
+                    offset=query.get("offset") or 0,
+                    group_by=query.get("group_by"),
+                    count_only=query.get("count_only") or False,
+                )
+                
+                results.append({
+                    "model": q_model,
+                    "result": q_result
+                })
+                
+            return {
+                "success": True,
+                "model": "mixed",
+                "results": results,
+                "summary": f"Successfully executed {len(queries)} search queries."
+            }
+
+        if not model:
+            return {"success": False, "error": "Either 'queries' array OR 'model' must be provided.", "model": "unknown"}
+
+        blocked_error = _validate_mcp_model_allowed(model)
+        if blocked_error:
+            return {
+                "success": False,
+                "error": blocked_error,
+                "model": model,
+            }
         # Parse domain - support both Python list and JSON string
         if domain is None:
             domain = []
@@ -477,12 +680,21 @@ def search_records(env, model, domain=None, fields=None, limit=None, order=None,
             }
 
         # If group_by specified, ensure it's in fields list
-        if group_by and fields and group_by not in fields:
-            fields = list(fields)  # Copy to avoid modifying original
-            fields.append(group_by)
+        if group_by:
+            group_by_list = [g.strip() for g in group_by.split(',') if g.strip()]
+            
+            if fields:
+                fields = list(fields)  # Copy to avoid modifying original
+                for g in group_by_list:
+                    base_field = g.split(':')[0].strip()
+                    if base_field not in fields:
+                        fields.append(base_field)
 
-        if group_by and not order:
-            order = f"{group_by}, id"
+            if not order:
+                # order by the base fields
+                order_fields = [g.split(':')[0].strip() for g in group_by_list]
+                order_fields.append("id")
+                order = ", ".join(order_fields)
 
         # CONSISTENCY ENFORCEMENT: Default and maximum limits are configurable through context.
         # MCP connectors inject these values per server; non-MCP callers fall back to 10.
@@ -592,10 +804,13 @@ def get_models_list(env):
     try:
         # Use Odoo's security-aware method from web module
         all_models = env['ir.model'].get_available_models()
+        blocked_models = _get_blocked_mcp_control_models()
 
         # Enhance each model with additional context
         enhanced_models = []
         for model in all_models:
+            if model.get('model') in blocked_models:
+                continue
             enhanced = {
                 "model": model['model'],
                 "display_name": model['display_name'],
@@ -672,6 +887,13 @@ def get_model_fields(env, models, field_types=None):
 
         for model_name in models:
             try:
+                blocked_error = _validate_mcp_model_allowed(model_name)
+                if blocked_error:
+                    result[model_name] = {
+                        'success': False,
+                        'error': blocked_error,
+                    }
+                    continue
                 # Check if user has access to this model
                 Model = env[model_name]
                 if not Model.browse().has_access('read'):
@@ -768,6 +990,12 @@ def get_selection_values(env, model, field):
     Get valid values for a selection field.
     """
     try:
+        blocked_error = _validate_mcp_model_allowed(model)
+        if blocked_error:
+            return {
+                "success": False,
+                "error": blocked_error,
+            }
         try:
             Model = env[model]
         except KeyError:
@@ -925,9 +1153,50 @@ def get_aggregate_records_declaration():
         "parameters": {
             "type": "object",
             "properties": {
+                "queries": {
+                    "anyOf": [
+                        {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "model": {"type": "string"},
+                                    "operation": {"type": "string", "enum": ["sum", "avg", "min", "max", "count"]},
+                                    "domain": {
+                                        "anyOf": [
+                                            {
+                                                "type": "array",
+                                                "items": {
+                                                    "anyOf": [
+                                                        {"type": "string"},
+                                                        {"type": "array", "items": {"anyOf": [{"type": "string"}, {"type": "number"}, {"type": "boolean"}, {"type": "array", "items": {"anyOf": [{"type": "string"}, {"type": "number"}]}}]}}
+                                                    ]
+                                                }
+                                            },
+                                            {"type": "null"}
+                                        ]
+                                    },
+                                    "field": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                                    "group_by": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                                    "having": {
+                                        "anyOf": [
+                                            {"type": "array", "items": {"type": "array", "items": {"anyOf": [{"type": "string"}, {"type": "number"}]}}},
+                                            {"type": "null"}
+                                        ]
+                                    },
+                                    "limit": {"anyOf": [{"type": "integer"}, {"type": "null"}]}
+                                },
+                                "required": ["model", "operation", "domain", "field", "group_by", "having", "limit"],
+                                "additionalProperties": False,
+                            }
+                        },
+                        {"type": "null"}
+                    ],
+                    "description": "A list of queries to execute. Allows aggregating multiple models in a single call.",
+                },
                 "model": {
-                    "type": "string",
-                    "description": "Technical model name (e.g., 'sale.order')",
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "description": "Technical model name (e.g., 'sale.order'). Required if not using 'queries'.",
                 },
                 "domain": {
                     "anyOf": [
@@ -945,9 +1214,8 @@ def get_aggregate_records_declaration():
                     "description": "Filter domain. array of arrays. Pass null for all records.",
                 },
                 "operation": {
-                    "type": "string",
-                    "enum": ["sum", "avg", "min", "max", "count"],
-                    "description": "Aggregation type.",
+                    "anyOf": [{"type": "string", "enum": ["sum", "avg", "min", "max", "count"]}, {"type": "null"}],
+                    "description": "Aggregation type. Required if not using 'queries'.",
                 },
                 "field": {
                     "anyOf": [{"type": "string"}, {"type": "null"}],
@@ -972,17 +1240,57 @@ def get_aggregate_records_declaration():
                     "description": "Limit results (e.g., for 'top 10'). Pass null if not needed.",
                 },
             },
-            "required": ["model", "operation", "domain", "field", "group_by", "having", "limit"],
+            "required": ["queries", "model", "operation", "domain", "field", "group_by", "having", "limit"],
             "additionalProperties": False,
         },
     }
 
 
-def aggregate_records(env, model, operation, domain=None, field=None, group_by=None, having=None, limit=None, **kwargs):
+def aggregate_records(env, model=None, operation=None, domain=None, field=None, group_by=None, having=None, limit=None, queries=None, **kwargs):
     """
     SUPERIOR aggregate_records using Odoo's _read_group() ORM method.
     """
     try:
+        if queries:
+            if not isinstance(queries, list):
+                return {"success": False, "error": "'queries' must be a list of objects.", "model": "mixed"}
+            
+            results = []
+            for query in queries:
+                q_model = query.get("model")
+                q_operation = query.get("operation")
+                if not q_model or not q_operation:
+                    return {"success": False, "error": "Each item in 'queries' must contain 'model' and 'operation'.", "model": "mixed"}
+                
+                # Recursive call
+                q_result = aggregate_records(
+                    env,
+                    model=q_model,
+                    operation=q_operation,
+                    domain=query.get("domain"),
+                    field=query.get("field"),
+                    group_by=query.get("group_by"),
+                    having=query.get("having"),
+                    limit=query.get("limit")
+                )
+                results.append({"model": q_model, "result": q_result})
+                
+            return {
+                "success": True,
+                "model": "mixed",
+                "results": results,
+                "summary": f"Successfully executed {len(queries)} aggregate queries."
+            }
+
+        if not model or not operation:
+            return {"success": False, "error": "Either 'queries' array OR 'model' and 'operation' must be provided.", "model": model or "unknown"}
+
+        blocked_error = _validate_mcp_model_allowed(model)
+        if blocked_error:
+            return {
+                "success": False,
+                "error": blocked_error,
+            }
         valid_operations = ['sum', 'avg', 'min', 'max', 'count']
         if operation not in valid_operations:
             return {
@@ -1030,6 +1338,21 @@ def aggregate_records(env, model, operation, domain=None, field=None, group_by=N
 
 
         if group_by:
+            group_by_list = [g.strip() for g in group_by.split(',') if g.strip()]
+            processed_groupby = []
+            
+            for g in group_by_list:
+                # AUTO-FIX: Append ':month' granularity if grouping by date/datetime field without granularity
+                base_group_by = g.split(':')[0].strip()
+                if base_group_by in Model._fields:
+                    field_obj = Model._fields[base_group_by]
+                    if field_obj.type in ('date', 'datetime') and ':' not in g:
+                        processed_groupby.append(f"{g}:month")
+                    else:
+                        processed_groupby.append(g)
+                else:
+                    processed_groupby.append(g)
+
             try:
                 if operation == 'count':
                     count_field = field or 'id'
@@ -1039,7 +1362,7 @@ def aggregate_records(env, model, operation, domain=None, field=None, group_by=N
 
                 result_groups = Model._read_group(
                     domain=domain,
-                    groupby=[group_by],
+                    groupby=processed_groupby,
                     aggregates=aggregates,
                     having=having or [],
                     offset=0,
@@ -1048,15 +1371,19 @@ def aggregate_records(env, model, operation, domain=None, field=None, group_by=N
 
                 groups = []
                 for group_tuple in result_groups:
-                    group_val = group_tuple[0]
-                    agg_val = group_tuple[1]
+                    group_vals = group_tuple[:len(processed_groupby)]
+                    agg_val = group_tuple[-1]
                     
-                    if hasattr(group_val, 'display_name'):
-                        label = group_val.display_name
-                    elif isinstance(group_val, (list, tuple)) and group_val:
-                        label = group_val[1] if len(group_val) > 1 else str(group_val[0])
-                    else:
-                        label = str(group_val)
+                    labels = []
+                    for g_val in group_vals:
+                        if hasattr(g_val, 'display_name'):
+                            labels.append(g_val.display_name)
+                        elif isinstance(g_val, (list, tuple)) and g_val:
+                            labels.append(g_val[1] if len(g_val) > 1 else str(g_val[0]))
+                        else:
+                            labels.append(str(g_val) if g_val is not False else 'False')
+
+                    label = " / ".join(labels)
 
                     groups.append({
                         "group": label,
@@ -1198,29 +1525,58 @@ def _get_record_mutation_values_schema():
 
 def get_create_record_declaration():
     """
-    Function declaration for creating a single Odoo business record.
+    Function declaration for creating Odoo business record(s).
     """
     return {
         "name": "create_record",
         "strict": True,
-        "description": "Create a single Odoo business record when the user explicitly asks for it. Use IDs for relational fields such as many2one and many2many values.",
+        "description": "Create one or more Odoo business records when the user explicitly asks for it. You can create multiple linked records across models by assigning a 'ref' to one record and using '$ref' in relational fields of subsequent records.",
         "parameters": {
             "type": "object",
             "properties": {
-                "model": {
-                    "type": "string",
-                    "description": "Technical Odoo model name (for example, 'crm.lead' or 'res.partner').",
+                "records": {
+                    "anyOf": [
+                        {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "model": {"type": "string"},
+                                    "values": _get_record_mutation_values_schema(),
+                                    "ref": {"type": "string"}
+                                },
+                                "required": ["model", "values"],
+                                "additionalProperties": False,
+                            }
+                        },
+                        {"type": "null"}
+                    ],
+                    "description": "A list of records to create. Assign a 'ref' string to a record and use '$ref' in subsequent records' values to dynamically link them (e.g., 'partner_id': '$contact1').",
                 },
-                "values": _get_record_mutation_values_schema(),
+                "model": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "description": "Technical Odoo model name (for example, 'crm.lead' or 'res.partner'). Required if not using the 'records' array.",
+                },
+                "values": {
+                    "anyOf": [
+                        _get_record_mutation_values_schema(),
+                        {
+                            "type": "array",
+                            "items": _get_record_mutation_values_schema()
+                        },
+                        {"type": "null"}
+                    ],
+                    "description": "A single dictionary of field values, or a list of dictionaries for batch creation. Required if not using the 'records' array.",
+                },
                 "fields": {
                     "anyOf": [
                         {"type": "array", "items": {"type": "string"}},
                         {"type": "null"},
                     ],
-                    "description": "Optional fields to read back from the created record. Pass null to return the created fields plus id.",
+                    "description": "Optional fields to read back from the created record(s). Pass null to return the created fields plus id.",
                 },
             },
-            "required": ["model", "values", "fields"],
+            "required": ["records", "model", "values", "fields"],
             "additionalProperties": False,
         },
     }
@@ -1228,33 +1584,66 @@ def get_create_record_declaration():
 
 def get_update_record_declaration():
     """
-    Function declaration for updating a single Odoo business record by ID.
+    Function declaration for updating Odoo business record(s) by ID(s).
     """
     return {
         "name": "update_record",
         "strict": True,
-        "description": "Update a single existing Odoo business record by ID. Use search_records first when the record ID is not known.",
+        "description": "Update one or more existing Odoo business records by ID. Use search_records first when record IDs are not known.",
         "parameters": {
             "type": "object",
             "properties": {
+                "records": {
+                    "anyOf": [
+                        {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "model": {"type": "string"},
+                                    "id": {"type": "integer"},
+                                    "values": _get_record_mutation_values_schema(),
+                                },
+                                "required": ["model", "id", "values"],
+                                "additionalProperties": False,
+                            }
+                        },
+                        {"type": "null"}
+                    ],
+                    "description": "A list of records to update. Allows updating multiple records across different models in a single call.",
+                },
                 "model": {
-                    "type": "string",
-                    "description": "Technical Odoo model name (for example, 'crm.lead' or 'res.partner').",
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "description": "Technical Odoo model name (for example, 'crm.lead' or 'res.partner'). Required if not using the 'records' array.",
                 },
                 "record_id": {
-                    "type": "integer",
-                    "description": "Existing record ID to update.",
+                    "anyOf": [
+                        {"type": "integer"},
+                        {"type": "array", "items": {"type": "integer"}},
+                        {"type": "null"}
+                    ],
+                    "description": "Existing record ID or list of IDs to update. Required if not using the 'records' array.",
                 },
-                "values": _get_record_mutation_values_schema(),
+                "values": {
+                    "anyOf": [
+                        _get_record_mutation_values_schema(),
+                        {
+                            "type": "array",
+                            "items": _get_record_mutation_values_schema()
+                        },
+                        {"type": "null"}
+                    ],
+                    "description": "A dictionary of field values to apply to all record_ids, or a list of dictionaries (matching record_id list length) for batch updating different values per record. Required if not using the 'records' array.",
+                },
                 "fields": {
                     "anyOf": [
                         {"type": "array", "items": {"type": "string"}},
                         {"type": "null"},
                     ],
-                    "description": "Optional fields to read back from the updated record. Pass null to return the updated fields plus id.",
+                    "description": "Optional fields to read back from the updated record(s). Pass null to return the updated fields plus id.",
                 },
             },
-            "required": ["model", "record_id", "values", "fields"],
+            "required": ["records", "model", "record_id", "values", "fields"],
             "additionalProperties": False,
         },
     }
@@ -1262,32 +1651,54 @@ def get_update_record_declaration():
 
 def get_archive_record_declaration():
     """
-    Function declaration for archiving a single Odoo business record by ID.
+    Function declaration for archiving Odoo business record(s) by ID(s).
     """
     return {
         "name": "archive_record",
         "strict": True,
-        "description": "Archive a single existing Odoo business record by setting active to false. This only works on models that have an active field.",
+        "description": "Archive one or more existing Odoo business records by setting active to false. This only works on models that have an active field.",
         "parameters": {
             "type": "object",
             "properties": {
+                "records": {
+                    "anyOf": [
+                        {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "model": {"type": "string"},
+                                    "id": {"type": "integer"},
+                                },
+                                "required": ["model", "id"],
+                                "additionalProperties": False,
+                            }
+                        },
+                        {"type": "null"}
+                    ],
+                    "description": "A list of records to archive. Allows processing multiple records across different models in a single call.",
+                },
                 "model": {
-                    "type": "string",
-                    "description": "Technical Odoo model name (for example, 'crm.lead' or 'res.partner').",
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "description": "Technical Odoo model name (for example, 'crm.lead' or 'res.partner'). Required if not using the 'records' array.",
                 },
                 "record_id": {
-                    "type": "integer",
-                    "description": "Existing record ID to archive.",
+                    "anyOf": [
+                        {"type": "integer"},
+                        {"type": "array", "items": {"type": "integer"}},
+                        {"type": "null"}
+                    ],
+                    "description": "Existing record ID or list of IDs to archive. Required if not using the 'records' array.",
                 },
                 "fields": {
                     "anyOf": [
                         {"type": "array", "items": {"type": "string"}},
                         {"type": "null"},
                     ],
-                    "description": "Optional fields to read back from the archived record. Pass null to return id and active.",
+                    "description": "Optional fields to read back from the archived record(s). Pass null to return id and active.",
                 },
             },
-            "required": ["model", "record_id", "fields"],
+            "required": ["records", "model", "record_id", "fields"],
             "additionalProperties": False,
         },
     }
@@ -1295,112 +1706,54 @@ def get_archive_record_declaration():
 
 def get_delete_record_declaration():
     """
-    Function declaration for deleting a single Odoo business record by ID.
+    Function declaration for deleting Odoo business record(s) by ID(s).
     """
     return {
         "name": "delete_record",
         "strict": True,
-        "description": "Delete a single existing Odoo business record by ID. This permanently removes the record when the current user has unlink permission and no business constraint blocks deletion.",
+        "description": "Delete one or more existing Odoo business records by ID. This permanently removes the records when the current user has unlink permission and no business constraint blocks deletion.",
         "parameters": {
             "type": "object",
             "properties": {
+                "records": {
+                    "anyOf": [
+                        {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "model": {"type": "string"},
+                                    "id": {"type": "integer"},
+                                },
+                                "required": ["model", "id"],
+                                "additionalProperties": False,
+                            }
+                        },
+                        {"type": "null"}
+                    ],
+                    "description": "A list of records to delete. Allows processing multiple records across different models in a single call.",
+                },
                 "model": {
-                    "type": "string",
-                    "description": "Technical Odoo model name (for example, 'crm.lead' or 'res.partner').",
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "description": "Technical Odoo model name (for example, 'crm.lead' or 'res.partner'). Required if not using the 'records' array.",
                 },
                 "record_id": {
-                    "type": "integer",
-                    "description": "Existing record ID to delete.",
+                    "anyOf": [
+                        {"type": "integer"},
+                        {"type": "array", "items": {"type": "integer"}},
+                        {"type": "null"}
+                    ],
+                    "description": "Existing record ID or list of IDs to delete. Required if not using the 'records' array.",
                 },
                 "fields": {
                     "anyOf": [
                         {"type": "array", "items": {"type": "string"}},
                         {"type": "null"},
                     ],
-                    "description": "Optional fields to read before deletion and include in the response. Pass null to return only the deleted record id.",
+                    "description": "Optional fields to read before deletion and include in the response. Pass null to return only the deleted record ids.",
                 },
             },
-            "required": ["model", "record_id", "fields"],
-            "additionalProperties": False,
-        },
-    }
-
-
-def get_execute_record_action_declaration():
-    """
-    Function declaration for executing an allow-listed object-button action on a record.
-    """
-    return {
-        "name": "execute_record_action",
-        "strict": True,
-        "description": "Execute an allow-listed object-button action on a single existing Odoo record. If the action opens a wizard dialog, the response returns the wizard inputs needed for the next step.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "model": {
-                    "type": "string",
-                    "description": "Technical Odoo model name (for example, 'sale.order').",
-                },
-                "record_id": {
-                    "type": "integer",
-                    "description": "Existing record ID to execute the action on.",
-                },
-                "action_name": {
-                    "type": "string",
-                    "description": "Allowed button label or method name, for example 'Confirm' or 'action_confirm'.",
-                },
-                "fields": {
-                    "anyOf": [
-                        {"type": "array", "items": {"type": "string"}},
-                        {"type": "null"},
-                    ],
-                    "description": "Optional fields to read back from the record after the action succeeds. Pass null to return only the record id.",
-                },
-            },
-            "required": ["model", "record_id", "action_name", "fields"],
-            "additionalProperties": False,
-        },
-    }
-
-
-def get_submit_action_wizard_declaration():
-    """
-    Function declaration for submitting a wizard returned by execute_record_action.
-    """
-    return {
-        "name": "submit_action_wizard",
-        "strict": True,
-        "description": "Submit values into a wizard returned by execute_record_action, then run one allowed wizard button method to complete the original business action.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "wizard_session_id": {
-                    "type": "integer",
-                    "description": "Wizard session id returned by execute_record_action.",
-                },
-                "values": {
-                    "anyOf": [
-                        _get_record_mutation_values_schema(),
-                        {"type": "null"},
-                    ],
-                    "description": "Optional wizard field values to write before running the wizard action.",
-                },
-                "action_name": {
-                    "anyOf": [
-                        {"type": "string"},
-                        {"type": "null"},
-                    ],
-                    "description": "Optional wizard button label or method name. When omitted, the tool auto-picks the single available button.",
-                },
-                "fields": {
-                    "anyOf": [
-                        {"type": "array", "items": {"type": "string"}},
-                        {"type": "null"},
-                    ],
-                    "description": "Optional fields to read back from the original business record after the wizard succeeds.",
-                },
-            },
-            "required": ["wizard_session_id", "values", "action_name", "fields"],
+            "required": ["records", "model", "record_id", "fields"],
             "additionalProperties": False,
         },
     }
@@ -1558,6 +1911,9 @@ def _normalize_write_field_value(env, Model, field_name, raw_value, field_info):
 
 def _normalize_record_write_values(env, model, values, extra_field_names=None):
     normalized_values = _normalize_record_values_payload(values)
+    blocked_error = _validate_mcp_model_allowed(model)
+    if blocked_error:
+        raise ValueError(blocked_error)
     try:
         Model = env[model]
     except KeyError:
@@ -1605,11 +1961,116 @@ def _read_single_record_payload(record, field_names):
     return payload
 
 
-def create_record(env, model, values, fields=None):
+def create_record(env, model=None, values=None, fields=None, records=None):
     """
-    Create a single Odoo business record.
+    Create one or more Odoo business records, or multiple records across different models using `records`.
     """
     try:
+        if records:
+            if not isinstance(records, list):
+                return {"success": False, "error": "'records' must be a list of objects.", "model": model or "mixed"}
+            
+            results = []
+            ref_map = {}
+            for item in records:
+                if not isinstance(item, dict) or "model" not in item or "values" not in item:
+                    return {"success": False, "error": "Each item in 'records' must contain 'model' and 'values'.", "model": model or "mixed"}
+                
+                m_name = item["model"]
+                m_vals = item["values"]
+                ref_id = item.get("ref")
+                
+                if not isinstance(m_vals, dict):
+                    return {"success": False, "error": f"Values must be a dictionary for {m_name}.", "model": m_name}
+                
+                def _resolve_refs(val):
+                    if isinstance(val, dict):
+                        return {k: _resolve_refs(v) for k, v in val.items()}
+                    elif isinstance(val, list):
+                        return [_resolve_refs(v) for v in val]
+                    elif isinstance(val, str) and val.startswith("$") and val[1:] in ref_map:
+                        return ref_map[val[1:]]
+                    return val
+                
+                resolved_vals = _resolve_refs(m_vals)
+
+                try:
+                    M, prepared_values, _ = _normalize_record_write_values(env, m_name, resolved_vals)
+                    M.browse().check_access("create")
+                    rec = M.create(prepared_values)
+                    
+                    if ref_id and isinstance(ref_id, str):
+                        ref_map[ref_id] = rec.id
+                        
+                    read_fields = _build_mutation_read_fields(M, prepared_values, fields)
+                    try:
+                        rec.check_access("read")
+                        rec_payload = _read_single_record_payload(rec, read_fields)
+                    except AccessError:
+                        rec_payload = {"id": rec.id}
+                        
+                    if ref_id:
+                        rec_payload["ref"] = ref_id
+                        
+                    results.append({"model": m_name, "record": rec_payload})
+                except AccessError:
+                    return {"success": False, "error": f"Access denied. You don't have permission to create {m_name}.", "model": m_name}
+                except Exception as error:
+                    return {"success": False, "error": str(error), "model": m_name}
+            
+            return {
+                "success": True,
+                "model": "mixed",
+                "records": results,
+                "summary": f"Successfully created {len(records)} records across potentially multiple models."
+            }
+
+        if not model or not values:
+            return {"success": False, "error": "Either 'records' array OR 'model' and 'values' must be provided.", "model": model or "unknown"}
+
+        if isinstance(values, list):
+            if not values:
+                return {"success": False, "error": "Values list cannot be empty.", "model": model}
+
+            prepared_values_list = []
+            Model = None
+            for val in values:
+                if not isinstance(val, dict):
+                    return {"success": False, "error": "Each item in values must be a dictionary.", "model": model}
+                M, prepared, _ = _normalize_record_write_values(env, model, val)
+                if Model is None:
+                    Model = M
+                prepared_values_list.append(prepared)
+
+            Model.browse().check_access("create")
+            records = Model.create(prepared_values_list)
+
+            records_payloads = []
+            read_fields = _build_mutation_read_fields(Model, prepared_values_list[0] if prepared_values_list else {}, fields)
+            try:
+                records.check_access("read")
+                for rec in records:
+                    records_payloads.append(_read_single_record_payload(rec, read_fields))
+                note = None
+            except AccessError:
+                records_payloads = [{"id": r.id} for r in records]
+                note = "Records were created, but the current user cannot read the requested fields."
+
+            result = {
+                "success": True,
+                "model": model,
+                "record_ids": records.ids,
+                "records": records_payloads,
+                "summary": "Created %s records for model %s." % (len(records), model),
+            }
+            if len(records) == 1:
+                result["record_id"] = records.id
+                result["record"] = records_payloads[0]
+            if note:
+                result["note"] = note
+            return result
+
+        # Single record create
         Model, prepared_values, _fields_info = _normalize_record_write_values(env, model, values)
         Model.browse().check_access("create")
         record = Model.create(prepared_values)
@@ -1638,37 +2099,160 @@ def create_record(env, model, values, fields=None):
         return {"success": False, "error": str(error), "model": model}
 
 
-def update_record(env, model, record_id, values, fields=None):
+def update_record(env, model=None, record_id=None, values=None, fields=None, records=None):
     """
-    Update a single Odoo business record by ID.
+    Update one or more Odoo business records by ID(s), or multiple records across different models using `records`.
     """
     try:
-        if isinstance(record_id, bool) or not isinstance(record_id, int):
-            return {"success": False, "error": "record_id must be an integer.", "model": model}
+        if records:
+            if not isinstance(records, list):
+                return {"success": False, "error": "'records' must be a list of objects.", "model": model or "mixed"}
+            
+            results = []
+            for item in records:
+                if not isinstance(item, dict) or "model" not in item or "id" not in item or "values" not in item:
+                    return {"success": False, "error": "Each item in 'records' must contain 'model', 'id', and 'values'.", "model": model or "mixed"}
+                
+                m_name = item["model"]
+                m_id = item["id"]
+                m_vals = item["values"]
+                
+                if not isinstance(m_id, int) or isinstance(m_id, bool):
+                    return {"success": False, "error": f"Invalid ID '{m_id}' for model {m_name}.", "model": m_name}
+                if not isinstance(m_vals, dict):
+                    return {"success": False, "error": f"Values must be a dictionary for {m_name} #{m_id}.", "model": m_name}
+                
+                try:
+                    Model = env[m_name]
+                    rec = Model.browse(m_id).exists()
+                    if not rec:
+                        return {"success": False, "error": f"Record {m_name} #{m_id} not found.", "model": m_name}
+                    
+                    rec.check_access("write")
+                    M, prepared_values, _ = _normalize_record_write_values(env, m_name, m_vals)
+                    rec.write(prepared_values)
+                    
+                    read_fields = _build_mutation_read_fields(M, prepared_values, fields)
+                    try:
+                        rec.check_access("read")
+                        rec_payload = _read_single_record_payload(rec, read_fields)
+                    except AccessError:
+                        rec_payload = {"id": rec.id}
+                        
+                    results.append({"model": m_name, "record": rec_payload})
+                except AccessError:
+                    return {"success": False, "error": f"Access denied. You don't have permission to update {m_name} #{m_id}.", "model": m_name}
+                except Exception as error:
+                    return {"success": False, "error": str(error), "model": m_name}
+            
+            return {
+                "success": True,
+                "model": "mixed",
+                "records": results,
+                "summary": f"Successfully updated {len(records)} records across potentially multiple models."
+            }
+
+        if not model or not record_id or not values:
+            return {"success": False, "error": "Either 'records' array OR 'model', 'record_id', 'values' must be provided.", "model": model or "unknown"}
+
+        if isinstance(values, list):
+            if not isinstance(record_id, list):
+                return {"success": False, "error": "When values is a list of dictionaries, record_id must be a list of integers of the same length.", "model": model}
+            if len(values) != len(record_id):
+                return {"success": False, "error": "The length of values (%s) and record_id (%s) lists must match." % (len(values), len(record_id)), "model": model}
+            if not values:
+                return {"success": False, "error": "Values list cannot be empty.", "model": model}
+
+            ids = [rid for rid in record_id if isinstance(rid, int) and not isinstance(rid, bool)]
+            if len(ids) != len(record_id):
+                return {"success": False, "error": "All record_ids must be valid integer IDs.", "model": model}
+
+            Model = env[model]
+            records = Model.browse(ids).exists()
+            if not records or len(records) != len(ids):
+                missing_ids = set(ids) - set(records.ids)
+                return {"success": False, "error": "Some records were not found: %s" % list(missing_ids), "model": model}
+            
+            records.check_access("write")
+
+            records_payloads = []
+            read_fields = None
+            for rid, val in zip(ids, values):
+                if not isinstance(val, dict):
+                    return {"success": False, "error": "Each item in values must be a dictionary.", "model": model}
+                rec = Model.browse(rid)
+                M, prepared_values, _ = _normalize_record_write_values(env, model, val)
+                rec.write(prepared_values)
+                if read_fields is None:
+                    read_fields = _build_mutation_read_fields(M, prepared_values, fields)
+
+            try:
+                records.check_access("read")
+                for rec in records:
+                    records_payloads.append(_read_single_record_payload(rec, read_fields))
+                note = None
+            except AccessError:
+                records_payloads = [{"id": r.id} for r in records]
+                note = "Records were updated, but the current user cannot read the requested fields."
+
+            result = {
+                "success": True,
+                "model": model,
+                "record_ids": records.ids,
+                "records": records_payloads,
+                "summary": "Updated %s records with unique values for model %s." % (len(records), model),
+            }
+            if len(ids) == 1:
+                result["record_id"] = records.id
+                result["record"] = records_payloads[0]
+                result["summary"] = "Updated %s #%s." % (model, records.id)
+            if note:
+                result["note"] = note
+            return result
+
+        if isinstance(record_id, list):
+            ids = [rid for rid in record_id if isinstance(rid, int) and not isinstance(rid, bool)]
+            if not ids:
+                return {"success": False, "error": "record_id list must contain at least one valid integer ID.", "model": model}
+        elif isinstance(record_id, int) and not isinstance(record_id, bool):
+            ids = [record_id]
+        else:
+            return {"success": False, "error": "record_id must be an integer or a list of integers.", "model": model}
 
         Model, prepared_values, _fields_info = _normalize_record_write_values(env, model, values)
-        record = Model.browse(record_id).exists()
-        if not record:
-            return {"success": False, "error": "Record not found.", "model": model}
+        records = Model.browse(ids).exists()
+        if not records:
+            return {"success": False, "error": "No records found.", "model": model}
+        if len(records) != len(ids):
+            missing_ids = set(ids) - set(records.ids)
+            return {"success": False, "error": "Some records were not found: %s" % list(missing_ids), "model": model}
 
-        record.check_access("write")
-        record.write(prepared_values)
+        records.check_access("write")
+        records.write(prepared_values)
+
         read_fields = _build_mutation_read_fields(Model, prepared_values, fields)
+        records_payloads = []
         try:
-            record.check_access("read")
-            record_payload = _read_single_record_payload(record, read_fields)
+            records.check_access("read")
+            for rec in records:
+                records_payloads.append(_read_single_record_payload(rec, read_fields))
             note = None
         except AccessError:
-            record_payload = {"id": record.id}
-            note = "Record was updated, but the current user cannot read the requested fields."
+            records_payloads = [{"id": r.id} for r in records]
+            note = "Records were updated, but the current user cannot read the requested fields."
 
         result = {
             "success": True,
             "model": model,
-            "record_id": record.id,
-            "record": record_payload,
-            "summary": "Updated %s #%s." % (model, record.id),
+            "record_ids": records.ids,
+            "records": records_payloads,
+            "summary": "Updated %s records for model %s." % (len(records), model),
         }
+        if len(ids) == 1:
+            result["record_id"] = records.id
+            result["record"] = records_payloads[0]
+            result["summary"] = "Updated %s #%s." % (model, records.id)
+
         if note:
             result["note"] = note
         return result
@@ -1678,13 +2262,74 @@ def update_record(env, model, record_id, values, fields=None):
         return {"success": False, "error": str(error), "model": model}
 
 
-def archive_record(env, model, record_id, fields=None):
+def archive_record(env, model=None, record_id=None, fields=None, records=None):
     """
-    Archive a single Odoo business record by setting active to False.
+    Archive one or more Odoo business records by setting active to False, or multiple across models using `records`.
     """
     try:
-        if isinstance(record_id, bool) or not isinstance(record_id, int):
-            return {"success": False, "error": "record_id must be an integer.", "model": model}
+        if records:
+            if not isinstance(records, list):
+                return {"success": False, "error": "'records' must be a list of objects.", "model": model or "mixed"}
+            
+            results = []
+            for item in records:
+                if not isinstance(item, dict) or "model" not in item or "id" not in item:
+                    return {"success": False, "error": "Each item in 'records' must contain 'model' and 'id'.", "model": model or "mixed"}
+                
+                m_name = item["model"]
+                m_id = item["id"]
+                
+                if not isinstance(m_id, int) or isinstance(m_id, bool):
+                    return {"success": False, "error": f"Invalid ID '{m_id}' for model {m_name}.", "model": m_name}
+                
+                try:
+                    Model = env[m_name]
+                    active_field = Model._fields.get("active")
+                    if not active_field or active_field.type != "boolean":
+                        return {"success": False, "error": f"Model '{m_name}' does not support archiving.", "model": m_name}
+                    
+                    rec = Model.browse(m_id).exists()
+                    if not rec:
+                        return {"success": False, "error": f"Record {m_name} #{m_id} not found.", "model": m_name}
+                    
+                    rec.check_access("write")
+                    rec.write({"active": False})
+                    
+                    read_fields = _build_mutation_read_fields(Model, {"active": False}, fields, default_fields=["active"])
+                    try:
+                        rec.check_access("read")
+                        rec_payload = _read_single_record_payload(rec, read_fields)
+                    except AccessError:
+                        rec_payload = {"id": rec.id}
+                        
+                    results.append({"model": m_name, "record": rec_payload})
+                except AccessError:
+                    return {"success": False, "error": f"Access denied. You don't have permission to update {m_name} #{m_id}.", "model": m_name}
+                except Exception as error:
+                    return {"success": False, "error": str(error), "model": m_name}
+            
+            return {
+                "success": True,
+                "model": "mixed",
+                "records": results,
+                "summary": f"Successfully archived {len(records)} records across potentially multiple models."
+            }
+
+        if not model or not record_id:
+            return {"success": False, "error": "Either 'records' array OR 'model' and 'record_id' must be provided.", "model": model or "unknown"}
+
+        if isinstance(record_id, list):
+            ids = [rid for rid in record_id if isinstance(rid, int) and not isinstance(rid, bool)]
+            if not ids:
+                return {"success": False, "error": "record_id list must contain at least one valid integer ID.", "model": model}
+        elif isinstance(record_id, int) and not isinstance(record_id, bool):
+            ids = [record_id]
+        else:
+            return {"success": False, "error": "record_id must be an integer or a list of integers.", "model": model}
+
+        blocked_error = _validate_mcp_model_allowed(model)
+        if blocked_error:
+            return {"success": False, "error": blocked_error, "model": model}
 
         try:
             Model = env[model]
@@ -1699,31 +2344,42 @@ def archive_record(env, model, record_id, fields=None):
                 "model": model,
             }
 
-        record = Model.browse(record_id).exists()
-        if not record:
-            return {"success": False, "error": "Record not found.", "model": model}
+        records = Model.browse(ids).exists()
+        if not records:
+            return {"success": False, "error": "No records found.", "model": model}
+        if len(records) != len(ids):
+            missing_ids = set(ids) - set(records.ids)
+            return {"success": False, "error": "Some records were not found: %s" % list(missing_ids), "model": model}
 
-        record.check_access("write")
-        was_active = bool(record.active)
-        record.write({"active": False})
+        records.check_access("write")
+        any_changed = any(records.mapped("active"))
+        records.write({"active": False})
+
         read_fields = _build_mutation_read_fields(Model, {"active": False}, fields, default_fields=["active"])
+        records_payloads = []
         try:
-            record.check_access("read")
-            record_payload = _read_single_record_payload(record, read_fields)
+            records.check_access("read")
+            for rec in records:
+                records_payloads.append(_read_single_record_payload(rec, read_fields))
             note = None
         except AccessError:
-            record_payload = {"id": record.id, "active": False}
-            note = "Record was archived, but the current user cannot read the requested fields."
+            records_payloads = [{"id": r.id, "active": False} for r in records]
+            note = "Records were archived, but the current user cannot read the requested fields."
 
         result = {
             "success": True,
             "model": model,
-            "record_id": record.id,
-            "record": record_payload,
+            "record_ids": records.ids,
+            "records": records_payloads,
             "archived": True,
-            "changed": was_active,
-            "summary": "Archived %s #%s." % (model, record.id),
+            "changed": any_changed,
+            "summary": "Archived %s records for model %s." % (len(records), model),
         }
+        if len(ids) == 1:
+            result["record_id"] = records.id
+            result["record"] = records_payloads[0]
+            result["summary"] = "Archived %s #%s." % (model, records.id)
+
         if note:
             result["note"] = note
         return result
@@ -1733,43 +2389,110 @@ def archive_record(env, model, record_id, fields=None):
         return {"success": False, "error": str(error), "model": model}
 
 
-def delete_record(env, model, record_id, fields=None):
+def delete_record(env, model=None, record_id=None, fields=None, records=None):
     """
-    Delete a single Odoo business record by ID.
+    Delete one or more Odoo business records by ID, or multiple across models using `records`.
     """
     try:
-        if isinstance(record_id, bool) or not isinstance(record_id, int):
-            return {"success": False, "error": "record_id must be an integer.", "model": model}
+        if records:
+            if not isinstance(records, list):
+                return {"success": False, "error": "'records' must be a list of objects.", "model": model or "mixed"}
+            
+            results = []
+            for item in records:
+                if not isinstance(item, dict) or "model" not in item or "id" not in item:
+                    return {"success": False, "error": "Each item in 'records' must contain 'model' and 'id'.", "model": model or "mixed"}
+                
+                m_name = item["model"]
+                m_id = item["id"]
+                
+                if not isinstance(m_id, int) or isinstance(m_id, bool):
+                    return {"success": False, "error": f"Invalid ID '{m_id}' for model {m_name}.", "model": m_name}
+                
+                try:
+                    Model = env[m_name]
+                    rec = Model.browse(m_id).exists()
+                    if not rec:
+                        return {"success": False, "error": f"Record {m_name} #{m_id} not found.", "model": m_name}
+                    
+                    rec.check_access("unlink")
+                    
+                    read_fields = _build_mutation_read_fields(Model, {}, fields)
+                    try:
+                        rec.check_access("read")
+                        rec_payload = _read_single_record_payload(rec, read_fields)
+                    except AccessError:
+                        rec_payload = {"id": rec.id}
+                        
+                    rec.unlink()
+                    results.append({"model": m_name, "record": rec_payload})
+                except AccessError:
+                    return {"success": False, "error": f"Access denied. You don't have permission to delete {m_name} #{m_id}.", "model": m_name}
+                except Exception as error:
+                    return {"success": False, "error": str(error), "model": m_name}
+            
+            return {
+                "success": True,
+                "model": "mixed",
+                "records": results,
+                "summary": f"Successfully deleted {len(records)} records across potentially multiple models."
+            }
+
+        if not model or not record_id:
+            return {"success": False, "error": "Either 'records' array OR 'model' and 'record_id' must be provided.", "model": model or "unknown"}
+
+        if isinstance(record_id, list):
+            ids = [rid for rid in record_id if isinstance(rid, int) and not isinstance(rid, bool)]
+            if not ids:
+                return {"success": False, "error": "record_id list must contain at least one valid integer ID.", "model": model}
+        elif isinstance(record_id, int) and not isinstance(record_id, bool):
+            ids = [record_id]
+        else:
+            return {"success": False, "error": "record_id must be an integer or a list of integers.", "model": model}
+
+        blocked_error = _validate_mcp_model_allowed(model)
+        if blocked_error:
+            return {"success": False, "error": blocked_error, "model": model}
 
         try:
             Model = env[model]
         except KeyError:
             return {"success": False, "error": "Model '%s' not found." % model, "model": model}
 
-        record = Model.browse(record_id).exists()
-        if not record:
-            return {"success": False, "error": "Record not found.", "model": model}
+        records = Model.browse(ids).exists()
+        if not records:
+            return {"success": False, "error": "No records found.", "model": model}
+        if len(records) != len(ids):
+            missing_ids = set(ids) - set(records.ids)
+            return {"success": False, "error": "Some records were not found: %s" % list(missing_ids), "model": model}
 
         read_fields = _build_mutation_read_fields(Model, {}, fields, default_fields=["id"])
+        records_payloads = []
         try:
-            record.check_access("read")
-            record_payload = _read_single_record_payload(record, read_fields)
+            records.check_access("read")
+            for rec in records:
+                records_payloads.append(_read_single_record_payload(rec, read_fields))
             note = None
         except AccessError:
-            record_payload = {"id": record.id}
-            note = "Record was deleted, but the current user could not read the requested fields before deletion."
+            records_payloads = [{"id": r.id} for r in records]
+            note = "Records were deleted, but the current user could not read the requested fields before deletion."
 
-        record.check_access("unlink")
-        record.unlink()
+        records.check_access("unlink")
+        records.unlink()
 
         result = {
             "success": True,
             "model": model,
-            "record_id": record_id,
-            "record": record_payload,
+            "record_ids": ids,
+            "records": records_payloads,
             "deleted": True,
-            "summary": "Deleted %s #%s." % (model, record_id),
+            "summary": "Deleted %s records for model %s." % (len(ids), model),
         }
+        if len(ids) == 1:
+            result["record_id"] = ids[0]
+            result["record"] = records_payloads[0]
+            result["summary"] = "Deleted %s #%s." % (model, ids[0])
+
         if note:
             result["note"] = note
         return result
@@ -1777,754 +2500,6 @@ def delete_record(env, model, record_id, fields=None):
         return {"success": False, "error": "Access denied. You don't have permission to delete this record.", "model": model}
     except Exception as error:
         return {"success": False, "error": str(error), "model": model}
-
-
-def get_chart_creation_declaration():
-    """
-    Function declaration for creating saved Chart.js charts from business data.
-    """
-    return {
-        "name": "chart_creation",
-        "strict": True,
-        "description": "Create one or more saved Chart.js charts from Odoo data and return backend/public URLs. Supports native Chart.js types only: bar, line, pie, doughnut, polarArea, radar, scatter, and bubble.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "title": {
-                    "type": "string",
-                    "description": "Chart title shown on the saved chart page.",
-                },
-                "model": {
-                    "type": "string",
-                    "description": "Technical Odoo model name (for example, 'sale.order').",
-                },
-                "domain": {
-                    "anyOf": [
-                        {
-                            "type": "array",
-                            "items": {
-                                "anyOf": [
-                                    {"type": "string"},
-                                    {
-                                        "type": "array",
-                                        "items": {
-                                            "anyOf": [
-                                                {"type": "string"},
-                                                {"type": "number"},
-                                                {"type": "boolean"},
-                                                {"type": "array", "items": {"anyOf": [{"type": "string"}, {"type": "number"}]}}
-                                            ]
-                                        }
-                                    }
-                                ]
-                            }
-                        },
-                        {"type": "null"}
-                    ],
-                    "description": "Optional Odoo domain filter. Pass null for all accessible records.",
-                },
-                "chart_types": {
-                    "anyOf": [
-                        {"type": "string"},
-                        {"type": "array", "items": {"type": "string"}}
-                    ],
-                    "description": "One chart type or a list of chart types. Supported values: bar, line, pie, doughnut, polarArea, radar, scatter, bubble.",
-                },
-                "x_axis": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "Field used for grouped labels or scatter/bubble X values.",
-                },
-                "y_axis": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "Required for scatter and bubble charts. Pass null for aggregate charts.",
-                },
-                "radius_field": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "Required only for bubble charts. Pass null otherwise.",
-                },
-                "operation": {
-                    "anyOf": [
-                        {"type": "string", "enum": ["sum", "avg", "min", "max", "count"]},
-                        {"type": "null"}
-                    ],
-                    "description": "Aggregate operation for bar, line, pie, doughnut, polarArea, and radar charts. Pass null for scatter/bubble.",
-                },
-                "metric_field": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "Field to aggregate for sum/avg/min/max. Pass null for count or scatter/bubble.",
-                },
-                "limit": {
-                    "anyOf": [{"type": "integer"}, {"type": "null"}],
-                    "description": "Optional maximum number of labels or points to include.",
-                },
-                "order": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "Optional sort order, mainly for scatter/bubble source rows.",
-                },
-                "subtitle": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "Optional subtitle for the saved chart page.",
-                },
-                "summary": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "Optional short explanation to save with the chart.",
-                },
-            },
-            "required": [
-                "title",
-                "model",
-                "domain",
-                "chart_types",
-                "x_axis",
-                "y_axis",
-                "radius_field",
-                "operation",
-                "metric_field",
-                "limit",
-                "order",
-                "subtitle",
-                "summary",
-            ],
-            "additionalProperties": False,
-        },
-    }
-
-
-def get_chart_update_declaration():
-    """
-    Function declaration for updating an existing saved Chart.js chart in place.
-    """
-    chart_parameters = deepcopy(get_chart_creation_declaration()["parameters"])
-    chart_parameters["properties"] = {
-        "chart_id": {
-            "anyOf": [{"type": "integer"}, {"type": "null"}],
-            "description": "Existing saved chart ID to update. Set chart_name to null when using this.",
-        },
-        "chart_name": {
-            "anyOf": [{"type": "string"}, {"type": "null"}],
-            "description": "Existing saved chart title to update when chart_id is not known. Set chart_id to null when using this.",
-        },
-        **chart_parameters["properties"],
-    }
-    chart_parameters["required"] = ["chart_id", "chart_name"] + chart_parameters["required"]
-    return {
-        "name": "chart_update",
-        "strict": True,
-        "description": "Update an existing saved Chart.js chart in place. Provide chart_id or chart_name plus the full replacement chart definition.",
-        "parameters": chart_parameters,
-    }
-
-
-def get_code_search_declaration():
-    """
-    Function declaration for read-only Odoo addon code search.
-    """
-    return {
-        "name": "code_search",
-        "strict": True,
-        "description": "Search read-only Odoo addon source code across installed custom modules, community addons, and enterprise addons when available. Returns ranked matches with file path, line number, snippet, and a short summary.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Search text or natural-language code question.",
-                },
-                "module_names": {
-                    "anyOf": [
-                        {"type": "array", "items": {"type": "string"}},
-                        {"type": "null"},
-                    ],
-                    "description": "Optional list of module names to narrow the search.",
-                },
-                "file_types": {
-                    "anyOf": [
-                        {"type": "array", "items": {"type": "string"}},
-                        {"type": "null"},
-                    ],
-                    "description": "Optional file types such as py, xml, js, scss, csv, json, or __manifest__.py.",
-                },
-                "limit": {
-                    "anyOf": [{"type": "integer"}, {"type": "null"}],
-                    "description": "Optional maximum number of search results to return.",
-                },
-            },
-            "required": ["query", "module_names", "file_types", "limit"],
-            "additionalProperties": False,
-        },
-    }
-
-
-def get_code_read_declaration():
-    """
-    Function declaration for bounded read-only Odoo addon code reads.
-    """
-    return {
-        "name": "code_read",
-        "strict": True,
-        "description": "Read a bounded snippet from an Odoo addon source file under allowed addon roots. This tool is strictly read-only and rejects paths outside allowed addon roots.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Absolute file path returned by code_search.",
-                },
-                "start_line": {
-                    "anyOf": [{"type": "integer"}, {"type": "null"}],
-                    "description": "Optional starting line number. Defaults to 1 when omitted.",
-                },
-                "end_line": {
-                    "anyOf": [{"type": "integer"}, {"type": "null"}],
-                    "description": "Optional ending line number. Defaults to a bounded range when omitted.",
-                },
-            },
-            "required": ["path", "start_line", "end_line"],
-            "additionalProperties": False,
-        },
-    }
-
-
-def get_dashboard_creation_declaration():
-    """
-    Function declaration for creating a multi-chart saved dashboard.
-    """
-    chart_request_schema = {
-        "type": "object",
-        "properties": {
-            "title": {"type": "string"},
-            "model": {"type": "string"},
-            "domain": {
-                "anyOf": [
-                    {
-                        "type": "array",
-                        "items": {
-                            "anyOf": [
-                                {"type": "string"},
-                                {
-                                    "type": "array",
-                                    "items": {
-                                        "anyOf": [
-                                            {"type": "string"},
-                                            {"type": "number"},
-                                            {"type": "boolean"},
-                                            {"type": "array", "items": {"anyOf": [{"type": "string"}, {"type": "number"}]}},
-                                        ]
-                                    },
-                                },
-                            ]
-                        },
-                    },
-                    {"type": "null"},
-                ],
-            },
-            "chart_types": {
-                "anyOf": [
-                    {"type": "string"},
-                    {"type": "array", "items": {"type": "string"}},
-                ],
-            },
-            "x_axis": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-            "y_axis": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-            "radius_field": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-            "operation": {
-                "anyOf": [
-                    {"type": "string", "enum": ["sum", "avg", "min", "max", "count"]},
-                    {"type": "null"},
-                ],
-            },
-            "metric_field": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-            "limit": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
-            "order": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-            "subtitle": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-            "summary": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-        },
-        "required": [
-            "title",
-            "model",
-            "domain",
-            "chart_types",
-            "x_axis",
-            "y_axis",
-            "radius_field",
-            "operation",
-            "metric_field",
-            "limit",
-            "order",
-            "subtitle",
-            "summary",
-        ],
-        "additionalProperties": False,
-    }
-    table_request_schema = {
-        "type": "object",
-        "properties": {
-            "title": {"type": "string"},
-            "model": {"type": "string"},
-            "domain": {
-                "anyOf": [
-                    {
-                        "type": "array",
-                        "items": {
-                            "anyOf": [
-                                {"type": "string"},
-                                {
-                                    "type": "array",
-                                    "items": {
-                                        "anyOf": [
-                                            {"type": "string"},
-                                            {"type": "number"},
-                                            {"type": "boolean"},
-                                            {"type": "array", "items": {"anyOf": [{"type": "string"}, {"type": "number"}]}},
-                                        ]
-                                    },
-                                },
-                            ]
-                        },
-                    },
-                    {"type": "null"},
-                ],
-            },
-            "fields": {"type": "array", "items": {"type": "string"}},
-            "limit": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
-            "order": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-            "subtitle": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-            "summary": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-        },
-        "required": ["title", "model", "domain", "fields", "limit", "order", "subtitle", "summary"],
-        "additionalProperties": False,
-    }
-    return {
-        "name": "dashboard_creation",
-        "strict": True,
-        "description": "Create a saved dashboard with multiple Chart.js charts and optional tabular widgets. Can build widgets from explicit requests or from a high-level dashboard goal.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "name": {"type": "string", "description": "Dashboard title."},
-                "subtitle": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-                "summary": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-                "dashboard_goal": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "description": "High-level goal such as sales, purchases, or invoices. Used when chart_requests are not provided.",
-                },
-                "chart_requests": {
-                    "anyOf": [
-                        {"type": "array", "items": chart_request_schema},
-                        {"type": "null"},
-                    ],
-                    "description": "Optional explicit chart requests to create and attach. Do not repeat charts that already exist; pass those through chart_ids instead.",
-                },
-                "table_requests": {
-                    "anyOf": [
-                        {"type": "array", "items": table_request_schema},
-                        {"type": "null"},
-                    ],
-                    "description": "Optional explicit table/list requests to create and attach as dashboard widgets.",
-                },
-                "chart_ids": {
-                    "anyOf": [
-                        {"type": "array", "items": {"type": "integer"}},
-                        {"type": "null"},
-                    ],
-                    "description": "Optional existing saved chart IDs to attach without recreating them.",
-                },
-                "shared_user_ids": {
-                    "anyOf": [
-                        {"type": "array", "items": {"type": "integer"}},
-                        {"type": "null"},
-                    ],
-                    "description": "Optional Odoo user IDs to share the dashboard with.",
-                },
-            },
-            "required": ["name", "subtitle", "summary", "dashboard_goal", "chart_requests", "table_requests", "chart_ids", "shared_user_ids"],
-            "additionalProperties": False,
-        },
-    }
-
-
-def get_dashboard_update_declaration():
-    """
-    Function declaration for appending charts to an existing saved dashboard.
-    """
-    chart_request_schema = get_dashboard_creation_declaration()["parameters"]["properties"]["chart_requests"]["anyOf"][0]["items"]
-    table_request_schema = get_dashboard_creation_declaration()["parameters"]["properties"]["table_requests"]["anyOf"][0]["items"]
-    return {
-        "name": "dashboard_update",
-        "strict": True,
-        "description": "Append existing charts, newly created charts, or new tabular widgets to an existing saved dashboard.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "dashboard_id": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
-                "dashboard_name": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-                "chart_ids": {
-                    "anyOf": [
-                        {"type": "array", "items": {"type": "integer"}},
-                        {"type": "null"},
-                    ],
-                },
-                "chart_requests": {
-                    "anyOf": [
-                        {"type": "array", "items": chart_request_schema},
-                        {"type": "null"},
-                    ],
-                },
-                "table_requests": {
-                    "anyOf": [
-                        {"type": "array", "items": table_request_schema},
-                        {"type": "null"},
-                    ],
-                },
-                "append_mode": {
-                    "anyOf": [
-                        {"type": "string", "enum": ["append"]},
-                        {"type": "null"},
-                    ],
-                },
-            },
-            "required": ["dashboard_id", "dashboard_name", "chart_ids", "chart_requests", "table_requests", "append_mode"],
-            "additionalProperties": False,
-        },
-    }
-
-
-def get_dashboard_remove_charts_declaration():
-    """
-    Function declaration for removing one or more charts from an existing dashboard.
-    """
-    return {
-        "name": "dashboard_remove_charts",
-        "strict": True,
-        "description": "Remove one or more chart links from an existing saved dashboard. This detaches the charts from the dashboard without deleting the chart records.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "dashboard_id": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
-                "dashboard_name": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-                "line_ids": {
-                    "anyOf": [
-                        {"type": "array", "items": {"type": "integer"}},
-                        {"type": "null"},
-                    ],
-                    "description": "Optional dashboard line IDs to remove. Set chart_ids to null when using these.",
-                },
-                "chart_ids": {
-                    "anyOf": [
-                        {"type": "array", "items": {"type": "integer"}},
-                        {"type": "null"},
-                    ],
-                    "description": "Optional chart IDs already linked to the dashboard. Set line_ids to null when using these.",
-                },
-            },
-            "required": ["dashboard_id", "dashboard_name", "line_ids", "chart_ids"],
-            "additionalProperties": False,
-        },
-    }
-
-
-def get_dashboard_replace_chart_declaration():
-    """
-    Function declaration for replacing a chart already linked to a dashboard.
-    """
-    chart_request_schema = get_dashboard_creation_declaration()["parameters"]["properties"]["chart_requests"]["anyOf"][0]["items"]
-    return {
-        "name": "dashboard_replace_chart",
-        "strict": True,
-        "description": "Replace an existing chart already linked to a dashboard, preserving the dashboard slot. Provide replacement_chart_id to reuse a saved chart or chart_request to create a new replacement chart.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "dashboard_id": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
-                "dashboard_name": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-                "line_id": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
-                "chart_id": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
-                "replacement_chart_id": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
-                "chart_request": {
-                    "anyOf": [
-                        chart_request_schema,
-                        {"type": "null"},
-                    ],
-                },
-            },
-            "required": [
-                "dashboard_id",
-                "dashboard_name",
-                "line_id",
-                "chart_id",
-                "replacement_chart_id",
-                "chart_request",
-            ],
-            "additionalProperties": False,
-        },
-    }
-
-
-def chart_creation(
-    env,
-    title,
-    model,
-    domain=None,
-    chart_types=None,
-    x_axis=None,
-    y_axis=None,
-    radius_field=None,
-    operation=None,
-    metric_field=None,
-    limit=None,
-    order=None,
-    subtitle=None,
-    summary=None,
-):
-    """
-    Delegate chart creation to the MCP module when installed.
-    """
-    try:
-        ChartService = env["sh.ai.mcp.chart"]
-    except KeyError:
-        return {
-            "success": False,
-            "error": "Chart creation requires the sh_ai_mcp module to be installed.",
-        }
-
-    return ChartService.execute_ai_chart_tool(
-        title=title,
-        model=model,
-        domain=domain,
-        chart_types=chart_types,
-        x_axis=x_axis,
-        y_axis=y_axis,
-        radius_field=radius_field,
-        operation=operation,
-        metric_field=metric_field,
-        limit=limit,
-        order=order,
-        subtitle=subtitle,
-        summary=summary,
-    )
-
-
-def chart_update(
-    env,
-    chart_id=None,
-    chart_name=None,
-    title=None,
-    model=None,
-    domain=None,
-    chart_types=None,
-    x_axis=None,
-    y_axis=None,
-    radius_field=None,
-    operation=None,
-    metric_field=None,
-    limit=None,
-    order=None,
-    subtitle=None,
-    summary=None,
-):
-    """
-    Delegate chart updates to the MCP module when installed.
-    """
-    try:
-        ChartService = env["sh.ai.mcp.chart"]
-    except KeyError:
-        return {
-            "success": False,
-            "error": "Chart updates require the sh_ai_mcp module to be installed.",
-        }
-
-    return ChartService.execute_ai_chart_update_tool(
-        chart_id=chart_id,
-        chart_name=chart_name,
-        title=title,
-        model=model,
-        domain=domain,
-        chart_types=chart_types,
-        x_axis=x_axis,
-        y_axis=y_axis,
-        radius_field=radius_field,
-        operation=operation,
-        metric_field=metric_field,
-        limit=limit,
-        order=order,
-        subtitle=subtitle,
-        summary=summary,
-    )
-
-
-def dashboard_creation(env, name, subtitle=None, summary=None, dashboard_goal=None, chart_requests=None, table_requests=None, chart_ids=None, shared_user_ids=None):
-    """
-    Delegate dashboard creation to the MCP module when installed.
-    """
-    try:
-        DashboardService = env["sh.ai.mcp.dashboard"]
-    except KeyError:
-        return {
-            "success": False,
-            "error": "Dashboard creation requires the sh_ai_mcp module to be installed.",
-        }
-
-    return DashboardService.execute_ai_dashboard_creation_tool(
-        name=name,
-        subtitle=subtitle,
-        summary=summary,
-        dashboard_goal=dashboard_goal,
-        chart_requests=chart_requests,
-        table_requests=table_requests,
-        chart_ids=chart_ids,
-        shared_user_ids=shared_user_ids,
-    )
-
-
-def dashboard_update(env, dashboard_id=None, dashboard_name=None, chart_ids=None, chart_requests=None, table_requests=None, append_mode=None):
-    """
-    Delegate dashboard updates to the MCP module when installed.
-    """
-    try:
-        DashboardService = env["sh.ai.mcp.dashboard"]
-    except KeyError:
-        return {
-            "success": False,
-            "error": "Dashboard updates require the sh_ai_mcp module to be installed.",
-        }
-
-    return DashboardService.execute_ai_dashboard_update_tool(
-        dashboard_id=dashboard_id,
-        dashboard_name=dashboard_name,
-        chart_ids=chart_ids,
-        chart_requests=chart_requests,
-        table_requests=table_requests,
-        append_mode=append_mode,
-    )
-
-
-def execute_record_action(env, model, record_id, action_name, fields=None):
-    """
-    Delegate allow-listed record action execution to the MCP module when installed.
-    """
-    try:
-        ActionService = env["sh.ai.mcp.action.tool"]
-    except KeyError:
-        return {
-            "success": False,
-            "error": "Record action execution requires the sh_ai_mcp module to be installed.",
-        }
-
-    return ActionService.execute_ai_record_action_tool(
-        model=model,
-        record_id=record_id,
-        action_name=action_name,
-        fields=fields,
-    )
-
-
-def submit_action_wizard(env, wizard_session_id, values=None, action_name=None, fields=None):
-    """
-    Delegate wizard submissions for record actions to the MCP module when installed.
-    """
-    try:
-        ActionService = env["sh.ai.mcp.action.tool"]
-    except KeyError:
-        return {
-            "success": False,
-            "error": "Wizard action submission requires the sh_ai_mcp module to be installed.",
-        }
-
-    return ActionService.submit_ai_action_wizard_tool(
-        wizard_session_id=wizard_session_id,
-        values=values,
-        action_name=action_name,
-        fields=fields,
-    )
-
-
-def dashboard_remove_charts(env, dashboard_id=None, dashboard_name=None, line_ids=None, chart_ids=None):
-    """
-    Delegate dashboard chart removals to the MCP module when installed.
-    """
-    try:
-        DashboardService = env["sh.ai.mcp.dashboard"]
-    except KeyError:
-        return {
-            "success": False,
-            "error": "Dashboard chart removal requires the sh_ai_mcp module to be installed.",
-        }
-
-    return DashboardService.execute_ai_dashboard_remove_charts_tool(
-        dashboard_id=dashboard_id,
-        dashboard_name=dashboard_name,
-        line_ids=line_ids,
-        chart_ids=chart_ids,
-    )
-
-
-def dashboard_replace_chart(
-    env,
-    dashboard_id=None,
-    dashboard_name=None,
-    line_id=None,
-    chart_id=None,
-    replacement_chart_id=None,
-    chart_request=None,
-):
-    """
-    Delegate dashboard chart replacement to the MCP module when installed.
-    """
-    try:
-        DashboardService = env["sh.ai.mcp.dashboard"]
-    except KeyError:
-        return {
-            "success": False,
-            "error": "Dashboard chart replacement requires the sh_ai_mcp module to be installed.",
-        }
-
-    return DashboardService.execute_ai_dashboard_replace_chart_tool(
-        dashboard_id=dashboard_id,
-        dashboard_name=dashboard_name,
-        line_id=line_id,
-        chart_id=chart_id,
-        replacement_chart_id=replacement_chart_id,
-        chart_request=chart_request,
-    )
-
-
-def code_search(env, query, module_names=None, file_types=None, limit=None):
-    """
-    Delegate read-only addon code search to the MCP module when installed.
-    """
-    try:
-        CodeService = env["sh.ai.mcp.code.tool"]
-    except KeyError:
-        return {
-            "success": False,
-            "error": "Code search requires the sh_ai_mcp module to be installed.",
-        }
-
-    return CodeService.execute_ai_code_search_tool(
-        query=query,
-        module_names=module_names,
-        file_types=file_types,
-        limit=limit,
-    )
-
-
-def code_read(env, path, start_line=None, end_line=None):
-    """
-    Delegate bounded read-only addon code reads to the MCP module when installed.
-    """
-    try:
-        CodeService = env["sh.ai.mcp.code.tool"]
-    except KeyError:
-        return {
-            "success": False,
-            "error": "Code reading requires the sh_ai_mcp module to be installed.",
-        }
-
-    return CodeService.execute_ai_code_read_tool(
-        path=path,
-        start_line=start_line,
-        end_line=end_line,
-    )
 
 
 def open_view(env, model, view_type, domain=None, group_by=None, graph_mode=None):

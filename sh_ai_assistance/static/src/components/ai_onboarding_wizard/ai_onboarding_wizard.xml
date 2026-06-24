@@ -59,20 +59,12 @@
                                             <t t-elif="provider.company.toLowerCase() === 'openrouter'">
                                                 <img src="/sh_ai_base/static/img/openrouter.png" alt="OpenRouter" class="provider-logo"/>
                                             </t>
-                                            <t t-elif="provider.company.toLowerCase() === 'anthropic'">
-                                                <img src="/sh_ai_base/static/img/claude.png" alt="Claude" class="provider-logo"/>
-                                            </t>
-                                            <t t-elif="provider.company.toLowerCase() === 'deepseek'">
-                                                <img src="/sh_ai_base/static/img/deepseek.png" alt="DeepSeek" class="provider-logo"/>
-                                            </t>
                                             <t t-else="">●</t>
                                         </span>
                                         <span class="provider-name">
                                             <t t-if="provider.company.toLowerCase() === 'google'">Google (Gemini)</t>
                                             <t t-elif="provider.company.toLowerCase() === 'openai'">OpenAI (ChatGPT)</t>
                                             <t t-elif="provider.company.toLowerCase() === 'openrouter'">OpenRouter</t>
-                                            <t t-elif="provider.company.toLowerCase() === 'anthropic'">Anthropic (Claude)</t>
-                                            <t t-elif="provider.company.toLowerCase() === 'deepseek'">DeepSeek</t>
                                             <t t-else="" t-esc="provider.company"/>
                                         </span>
                                     </button>

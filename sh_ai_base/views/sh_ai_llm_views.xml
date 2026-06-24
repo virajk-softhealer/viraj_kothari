@@ -37,7 +37,7 @@
                 <div class="alert alert-info" role="alert"
                         invisible="not is_reasoning_model"
                         style="margin-bottom: 20px;">
-                    <i class="fa fa-info-circle me-1"/>
+                    <i class="fa fa-info-circle me-1" title="Information"/>
                     <strong>Reasoning Model Detected:</strong>
                     This model uses internal reasoning tokens to plan and solve multi-step tasks. 
                     <br/>• <strong>Minimal/Low:</strong> Favor speed and lower cost (best for simple tasks).

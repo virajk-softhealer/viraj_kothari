@@ -46,7 +46,4 @@ ADD VOICE Feature : allow user to speak and AI will listen and respond.
 [IMP] :
 ADD Reasoning effort selection in LLM Providers : Allow user to select reasoning effort for AI chat to set how 
 
-19.0.9 (Date : 23th June 2026)
 
-[IMP] :
-Add Deepseek and Claude Model in LLM.

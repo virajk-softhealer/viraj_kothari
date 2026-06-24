@@ -89,8 +89,6 @@ export class AiOnboardingWizard extends Component {
         const company = this.state.selectedProvider.company.toLowerCase();
         if (company === 'google') return '✦';
         if (company === 'openai') return '◆';
-        if (company === 'anthropic') return '◈';
-        if (company === 'deepseek') return '◉';
         return '●';
     }
 
@@ -123,8 +121,6 @@ export class AiOnboardingWizard extends Component {
         if (company === 'google') return 'https://aistudio.google.com/apikey';
         if (company === 'openai') return 'https://platform.openai.com/api-keys';
         if (company === 'openrouter') return 'https://openrouter.ai/settings/keys';
-        if (company === 'anthropic') return 'https://console.anthropic.com/settings/keys';
-        if (company === 'deepseek') return 'https://platform.deepseek.com/api_keys';
         return '#';
     }
 

@@ -41,26 +41,6 @@
             <field name="active">True</field>
         </record>
 
-        <!-- Demo Claude Sonnet 4.6 Provider (Anthropic) -->
-        <record id="demo_claude_35_sonnet" model="sh.ai.llm">
-            <field name="name">Claude Sonnet 4.6</field>
-            <field name="sh_company">Anthropic</field>
-            <field name="sh_model_code">claude-sonnet-4-6</field>
-            <field name="sh_api_key">YOUR_ANTHROPIC_API_KEY_HERE</field>
-            <field name="image" type="base64" file="sh_ai_base/static/img/claude.png"/>
-            <field name="active">True</field>
-        </record>
-
-        <!-- Demo DeepSeek Chat Provider -->
-        <record id="demo_deepseek_chat" model="sh.ai.llm">
-            <field name="name">DeepSeek Chat</field>
-            <field name="sh_company">DeepSeek</field>
-            <field name="sh_model_code">deepseek-chat</field>
-            <field name="sh_api_key">YOUR_DEEPSEEK_API_KEY_HERE</field>
-            <field name="image" type="base64" file="sh_ai_base/static/img/deepseek.png"/>
-            <field name="active">True</field>
-        </record>
-
         <!-- Demo OpenRouter Provider -->
         <record id="demo_openrouter_provider" model="sh.ai.llm">
             <field name="name">OpenRouter</field>

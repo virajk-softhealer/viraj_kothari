@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) Softhealer Technologies Pvt. Ltd.
+# Copyright (C) Softhealer Technologies.
 
 import base64
 import json
@@ -47,14 +47,6 @@ class ShAiLlm(models.Model):
             return 'openrouter'
 
         model_code = (self.sh_model_code or '').lower()
-
-        # DeepSeek model patterns
-        if any(pattern in model_code for pattern in ['deepseek']):
-            return 'deepseek'
-
-        # Claude model patterns
-        if any(pattern in model_code for pattern in ['claude']):
-            return 'claude'
 
         # OpenAI model patterns
         if any(pattern in model_code for pattern in ['gpt-', 'o1', 'o3', 'chatgpt']):
@@ -108,14 +100,8 @@ class ShAiLlm(models.Model):
     def _compute_is_reasoning_model(self):
         for llm in self:
             model_code = (llm.sh_model_code or '').lower()
-            # Reasoning models: OpenAI o1/o3 series and gpt-5 family use
-            # reasoning_effort instead of temperature.
+            # Reasoning models: OpenAI o1, o3, GPT-5, or Gemini "thinking" models
             llm.is_reasoning_model = True
-            # any(
-            #     pattern in model_code
-            #     for pattern in ['gpt-5', 'o1-', 'o3-', '/o1', '/o3']
-            # ) or model_code in ('o1', 'o3')
-            print("ID -->", llm.id ,"Reasoning Model -->",llm.is_reasoning_model)
 
     @api.model
     def _get_openrouter_image_data(self):

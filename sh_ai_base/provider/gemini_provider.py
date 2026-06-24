@@ -97,11 +97,11 @@ class GeminiProvider:
                     # Extract cached tokens if present
                     if hasattr(usage, 'cached_content_token_count'):
                         full_response.usage_metadata.cached_content_token_count = usage.cached_content_token_count or 0
-                    
+
                     # Extract reasoning (thoughts) tokens if present
                     if hasattr(usage, 'thoughts_token_count'):
                         full_response.usage_metadata.thoughts_token_count = usage.thoughts_token_count or 0
-
+    
             return finalize_mock()
 
         except AiStoppedException:
