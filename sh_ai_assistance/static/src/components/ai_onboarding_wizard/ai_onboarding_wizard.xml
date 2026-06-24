@@ -1,0 +1,310 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="sh_ai_assistance.AiOnboardingWizard">
+        <div class="ai-onboarding-wizard" t-att-class="state.isAnimating ? 'animating' : ''">
+
+            <!-- ============================================ -->
+            <!-- SCREEN: WELCOME                              -->
+            <!-- ============================================ -->
+            <t t-if="state.currentScreen === 'welcome'">
+                <div class="onboarding-screen welcome-screen">
+                    <div class="onboarding-content">
+                        <div class="welcome-icon">
+                            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                                <path d="M2 17l10 5 10-5"/>
+                                <path d="M2 12l10 5 10-5"/>
+                            </svg>
+                        </div>
+                        <h1 class="welcome-title">
+                            Ready to set up your
+                            <span class="highlight">AI Assistant?</span>
+                        </h1>
+                        <p class="welcome-subtitle">
+                            We'll get you up and running in <strong>4 steps</strong>
+                        </p>
+                        <button class="onboarding-btn primary" t-on-click="startSetup">
+                            Let's do it
+                        </button>
+                    </div>
+                    <div class="onboarding-footer">
+                        <button class="skip-link" t-on-click="skipSetup">
+                            Skip and set up later
+                        </button>
+                    </div>
+                </div>
+            </t>
+
+            <!-- ============================================ -->
+            <!-- SCREEN: CHOOSE PROVIDER (Step 1)             -->
+            <!-- ============================================ -->
+            <t t-if="state.currentScreen === 'provider'">
+                <div class="onboarding-screen provider-screen">
+                    <div class="onboarding-content">
+                        <div class="step-sentence">
+                            <span class="sentence-text">I want to use</span>
+                            <div class="provider-selector">
+                                <t t-foreach="state.providers" t-as="provider" t-key="provider.company">
+                                    <button class="provider-option"
+                                            t-att-class="state.selectedProvider?.company === provider.company ? 'selected' : ''"
+                                            t-on-click="() => this.selectProvider(provider)">
+                                        <span class="provider-icon"
+                                              t-att-class="'provider-' + provider.company.toLowerCase()">
+                                            <t t-if="provider.company.toLowerCase() === 'google'">
+                                                <img src="/sh_ai_base/static/img/gemini.png" alt="Gemini" class="provider-logo"/>
+                                            </t>
+                                            <t t-elif="provider.company.toLowerCase() === 'openai'">
+                                                <img src="/sh_ai_base/static/img/chatgpt.png" alt="ChatGPT" class="provider-logo"/>
+                                            </t>
+                                            <t t-elif="provider.company.toLowerCase() === 'openrouter'">
+                                                <img src="/sh_ai_base/static/img/openrouter.png" alt="OpenRouter" class="provider-logo"/>
+                                            </t>
+                                            <t t-else="">●</t>
+                                        </span>
+                                        <span class="provider-name">
+                                            <t t-if="provider.company.toLowerCase() === 'google'">Google (Gemini)</t>
+                                            <t t-elif="provider.company.toLowerCase() === 'openai'">OpenAI (ChatGPT)</t>
+                                            <t t-elif="provider.company.toLowerCase() === 'openrouter'">OpenRouter</t>
+                                            <t t-else="" t-esc="provider.company"/>
+                                        </span>
+                                    </button>
+                                </t>
+                            </div>
+                        </div>
+
+                        <div class="step-actions" t-if="isProviderSelected">
+                            <button class="onboarding-btn primary"
+                                    t-on-click="confirmProvider">
+                                Continue
+                                <i class="fa fa-arrow-right ms-2"/>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="onboarding-footer">
+                        <span class="step-indicator">Step 1 of 4</span>
+                        <button class="skip-link" t-on-click="skipSetup">Skip</button>
+                    </div>
+                </div>
+            </t>
+
+            <!-- ============================================ -->
+            <!-- SCREEN: API KEY (Step 2)                     -->
+            <!-- ============================================ -->
+            <t t-if="state.currentScreen === 'api_key'">
+                <div class="onboarding-screen apikey-screen">
+                    <div class="onboarding-content">
+                        <div class="step-sentence">
+                            <span class="sentence-text">
+                                I want to use
+                                <span class="highlight-inline" t-esc="state.selectedProvider?.company"/>
+                                with my
+                            </span>
+                            <div class="apikey-input-wrapper">
+                                <input type="password"
+                                       class="apikey-input"
+                                       placeholder="Paste your API key here..."
+                                       t-att-value="state.apiKey"
+                                       t-on-input="onApiKeyInput"
+                                       spellcheck="false"
+                                       autocomplete="off"/>
+                                <span class="input-label">key</span>
+                            </div>
+                        </div>
+
+                        <a class="help-link" t-att-href="apiKeyHelpUrl" target="_blank">
+                            <i class="fa fa-external-link me-1"/>
+                            How to get a free <t t-esc="state.selectedProvider?.company"/> API key?
+                        </a>
+
+                        <!-- Verification feedback -->
+                        <div t-if="state.verifyError" class="verify-feedback error">
+                            <i class="fa fa-exclamation-circle me-2"/>
+                            <t t-esc="state.verifyError"/>
+                        </div>
+                        <div t-if="state.verifySuccess" class="verify-feedback success">
+                            <i class="fa fa-check-circle me-2"/>
+                            <t t-esc="state.verifySuccess"/>
+                        </div>
+
+                        <div class="step-actions">
+                            <button class="onboarding-btn primary"
+                                    t-att-class="!canVerifyKey ? 'disabled' : ''"
+                                    t-att-disabled="!canVerifyKey"
+                                    t-on-click="verifyAndSaveApiKey">
+                                <t t-if="state.isVerifying">
+                                    <i class="fa fa-spinner fa-spin me-2"/>
+                                    Verifying...
+                                </t>
+                                <t t-else="">
+                                    Verify &amp; Continue
+                                    <i class="fa fa-arrow-right ms-2"/>
+                                </t>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="onboarding-footer">
+                        <span class="step-indicator">Step 2 of 4</span>
+                        <button class="skip-link" t-on-click="() => this.goToScreen('provider')">
+                            <i class="fa fa-arrow-left me-1"/>Back
+                        </button>
+                    </div>
+                </div>
+            </t>
+
+            <!-- ============================================ -->
+            <!-- SCREEN: DEFAULT MODEL (Step 3)               -->
+            <!-- ============================================ -->
+            <t t-if="state.currentScreen === 'default_model'">
+                <div class="onboarding-screen model-screen">
+                    <div class="onboarding-content">
+                        <t t-if="isOpenRouterProvider">
+                            <h2 class="screen-title">Which model would you like to use?</h2>
+                            <div class="openrouter-model-picker">
+                                <select class="openrouter-model-select"
+                                        t-att-value="state.selectedModelId || ''"
+                                        t-on-change="onOpenRouterModelChange">
+                                    <option value="">Select an OpenRouter model</option>
+                                    <t t-foreach="state.providerModels" t-as="model" t-key="model.id">
+                                        <option t-att-value="model.id">
+                                            <t t-esc="model.name"/>
+                                        </option>
+                                    </t>
+                                </select>
+                                <i class="fa fa-angle-down picker-caret"/>
+                            </div>
+                        </t>
+                        <t t-else="">
+                            <h2 class="screen-title">Which model would you like to use?</h2>
+                            <div class="model-list">
+                                <t t-foreach="state.providerModels" t-as="model" t-key="model.id">
+                                    <button class="model-option"
+                                            t-att-class="state.selectedModelId === model.id ? 'selected' : ''"
+                                            t-on-click="() => this.selectModel(model.id)">
+                                        <div class="model-radio">
+                                            <div class="radio-dot"
+                                                 t-att-class="state.selectedModelId === model.id ? 'active' : ''"/>
+                                        </div>
+                                        <div class="model-details">
+                                            <span class="model-name" t-esc="model.name"/>
+                                            <div class="model-code" t-esc="model.model_code"/>
+                                        </div>
+                                    </button>
+                                </t>
+                            </div>
+                        </t>
+                        <p class="model-hint" t-if="!state.providerModels.length">
+                            <i class="fa fa-info-circle me-1"/>
+                            No models are available yet. Verify the provider key first to load model options.
+                        </p>
+                        <p class="model-hint" t-if="isOpenRouterProvider and state.selectedModelId">
+                            <i class="fa fa-check-circle me-1"/>
+                            Selected model: <t t-esc="selectedModelName"/>
+                        </p>
+                        <p class="model-hint">
+                            <i class="fa fa-info-circle me-1"/>
+                            You can add more models later in Settings
+                        </p>
+                        <div class="step-actions">
+                            <button class="onboarding-btn primary"
+                                    t-att-disabled="!state.selectedModelId"
+                                    t-on-click="confirmDefaultModel">
+                                Continue
+                                <i class="fa fa-arrow-right ms-2"/>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="onboarding-footer">
+                        <span class="step-indicator">Step 3 of 4</span>
+                        <button class="skip-link" t-on-click="() => this.goToScreen('api_key')">
+                            <i class="fa fa-arrow-left me-1"/>Back
+                        </button>
+                    </div>
+                </div>
+            </t>
+
+            <!-- ============================================ -->
+            <!-- SCREEN: RESPONSE STYLE (Step 4)              -->
+            <!-- ============================================ -->
+            <t t-if="state.currentScreen === 'style'">
+                <div class="onboarding-screen style-screen">
+                    <div class="onboarding-content">
+                        <h2 class="screen-title">How should your AI respond?</h2>
+                        <div class="style-cards">
+                            <button class="style-card"
+                                    t-att-class="state.selectedStyle === 'precise' ? 'selected' : ''"
+                                    t-on-click="() => this.selectStyle('precise')">
+                                <div class="style-icon">🎯</div>
+                                <div class="style-name">Precise</div>
+                                <div class="style-desc">Best for data queries and accuracy</div>
+                            </button>
+                            <button class="style-card"
+                                    t-att-class="state.selectedStyle === 'balanced' ? 'selected' : ''"
+                                    t-on-click="() => this.selectStyle('balanced')">
+                                <div class="style-icon">⚖️</div>
+                                <div class="style-name">Balanced</div>
+                                <div class="style-desc">Good for general use</div>
+                            </button>
+                            <button class="style-card"
+                                    t-att-class="state.selectedStyle === 'creative' ? 'selected' : ''"
+                                    t-on-click="() => this.selectStyle('creative')">
+                                <div class="style-icon">🎨</div>
+                                <div class="style-name">Creative</div>
+                                <div class="style-desc">Best for text generation</div>
+                            </button>
+                        </div>
+                        <div class="step-actions">
+                            <button class="onboarding-btn primary"
+                                    t-on-click="confirmStyle">
+                                Complete Setup
+                                <i class="fa fa-check ms-2"/>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="onboarding-footer">
+                        <span class="step-indicator">Step 4 of 4</span>
+                        <button class="skip-link" t-on-click="() => this.goToScreen('default_model')">
+                            <i class="fa fa-arrow-left me-1"/>Back
+                        </button>
+                    </div>
+                </div>
+            </t>
+
+            <!-- ============================================ -->
+            <!-- SCREEN: SUCCESS                              -->
+            <!-- ============================================ -->
+            <t t-if="state.currentScreen === 'success'">
+                <div class="onboarding-screen success-screen">
+                    <div class="onboarding-content">
+                        <div class="success-icon">🎉</div>
+                        <h1 class="success-title">Your AI Assistant is ready!</h1>
+                        <button class="onboarding-btn primary large"
+                                t-on-click="openChat">
+                            Start Chatting
+                            <i class="fa fa-arrow-right ms-2"/>
+                        </button>
+                    </div>
+                </div>
+            </t>
+
+            <!-- ============================================ -->
+            <!-- BLOCKER SCREEN (For Users, not Manager)      -->
+            <!-- ============================================ -->
+            <t t-if="state.currentScreen === 'blocker'">
+                <div class="onboarding-screen blocker-screen">
+                    <div class="onboarding-content">
+                        <div class="blocker-icon">🔧</div>
+                        <h2 class="blocker-title">AI Assistant is being set up</h2>
+                        <p class="blocker-subtitle">
+                            Your administrator needs to complete the initial
+                            configuration before you can start using AI Chat.
+                        </p>
+                        <p class="blocker-hint">
+                            Please contact your system administrator.
+                        </p>
+                    </div>
+                </div>
+            </t>
+
+        </div>
+    </t>
+</templates>

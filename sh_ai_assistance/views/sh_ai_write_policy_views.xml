@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_res_config_settings_ai_write_form" model="ir.ui.view">
+        <field name="name">res.config.settings.ai.assistance.form</field>
+        <field name="model">res.config.settings</field>
+        <field name="priority" eval="90"/>
+        <field name="inherit_id" ref="base.res_config_settings_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//form" position="inside">
+                <app
+                    data-string="AI Assistance"
+                    string="AI Assistance"
+                    name="sh_ai_assistance"
+                    logo="/sh_ai_assistance/static/description/icon.png"
+                    groups="sh_ai_base.group_sh_ai_manager"
+                >
+                    <block title="Providers &amp; Models" name="sh_ai_provider_settings">
+                        <setting
+                            id="sh_ai_provider_management"
+                            string="LLM Providers"
+                            help="Manage the AI models, API keys, and default provider used by AI Assistance."
+                        >
+                            <div class="content-group">
+                                <div class="mt8">
+                                    <button
+                                        name="%(sh_ai_base.action_sh_ai_llm)d"
+                                        type="action"
+                                        string="Manage Providers"
+                                        icon="oi-arrow-right"
+                                        class="btn-link"
+                                    />
+                                </div>
+                            </div>
+                        </setting>
+                    </block>
+
+                    <block title="Agent Loop Controls" name="sh_ai_loop_controls">
+                        <setting
+                            id="sh_ai_max_iterations_setting"
+                            string="Max Tool Rounds"
+                            help="Maximum number of AI reasoning/tool rounds allowed in one response before the assistant must recover or stop."
+                        >
+                            <div class="content-group">
+                                <div class="d-flex align-items-center gap-3 flex-wrap">
+                                    <label for="sh_ai_max_iterations" string="Rounds" class="o_light_label"/>
+                                    <field name="sh_ai_max_iterations" class="oe_inline"/>
+                                </div>
+                                <div class="mt8 text-muted">
+                                    Increase this only if real queries need more tool rounds. Lower values reduce wandering loops and provider cost.
+                                </div>
+                            </div>
+                        </setting>
+
+                        <setting
+                            id="sh_ai_max_duplicate_tool_calls_setting"
+                            string="Max Duplicate Tool Calls"
+                            help="Maximum number of identical repeated tool calls allowed in one response before the assistant stops the loop."
+                        >
+                            <div class="content-group">
+                                <div class="d-flex align-items-center gap-3 flex-wrap">
+                                    <label for="sh_ai_max_duplicate_tool_calls" string="Repeats" class="o_light_label"/>
+                                    <field name="sh_ai_max_duplicate_tool_calls" class="oe_inline"/>
+                                </div>
+                                <div class="mt8 text-muted">
+                                    This prevents the model from getting stuck on the same tool call repeatedly.
+                                </div>
+                            </div>
+                        </setting>
+                    </block>
+
+                    <block title="Write Access &amp; Safety" name="sh_ai_write_access_settings">
+                        <setting
+                            id="sh_ai_write_scope"
+                            string="Configuration Scope"
+                            help="AI write rules are configured per company. Models not listed below remain writable by AI when the user already has access rights and record-rule access."
+                        >
+                            <div class="content-group">
+                                <div class="d-flex align-items-center gap-3 flex-wrap">
+                                    <label for="company_id" string="Company" class="o_light_label"/>
+                                    <field name="company_id" options="{'no_create': True}" class="oe_inline"/>
+                                    <span class="text-muted">Restricted Models</span>
+                                    <field name="sh_ai_write_policy_count" readonly="1" class="w-auto ps-1 fw-bold"/>
+                                </div>
+                                <div class="mt8 text-muted">
+                                    Add only the models that should be restricted from AI create, update, or archive. If a model is not listed here, AI may propose writes using the user's normal Odoo access rights and record rules.
+                                </div>
+                            </div>
+                        </setting>
+
+                        <setting
+                            id="sh_ai_write_rules"
+                            string="Restricted Models"
+                            help="Choose which models and fields AI must not change."
+                        >
+                            <div class="content-group mt16">
+                                <field name="sh_ai_write_policy_ids" context="{'default_company_id': company_id}" nolabel="1">
+                                    <list editable="bottom">
+                                        <field name="company_id" column_invisible="True"/>
+                                        <field
+                                            name="model_id"
+                                            domain="[
+                                                ('transient', '=', False),
+                                                ('model', 'not like', 'ir.%'),
+                                                ('model', 'not like', 'sh.ai.%'),
+                                                ('model', 'not like', 'bus.%'),
+                                                ('model', 'not in', ['ir.model', 'ir.model.fields', 'ir.model.access', 'ir.rule', 'ir.config_parameter', 'res.groups'])
+                                            ]"
+                                        />
+                                        <field name="model_name" readonly="1" optional="hide"/>
+                                        <field name="block_create"/>
+                                        <field name="block_update"/>
+                                        <field name="block_archive"/>
+                                    </list>
+                                    <form string="AI Write Restriction Rule">
+                                        <sheet>
+                                            <group>
+                                                <group>
+                                                    <field name="company_id" invisible="1"/>
+                                                    <field
+                                                        name="model_id"
+                                                        domain="[
+                                                            ('transient', '=', False),
+                                                            ('model', 'not like', 'ir.%'),
+                                                            ('model', 'not like', 'sh.ai.%'),
+                                                            ('model', 'not like', 'bus.%'),
+                                                            ('model', 'not in', ['ir.model', 'ir.model.fields', 'ir.model.access', 'ir.rule', 'ir.config_parameter', 'res.groups'])
+                                                        ]"
+                                                    />
+                                                    <field name="model_name" readonly="1"/>
+                                                    <field name="model_display_name" readonly="1"/>
+                                                </group>
+                                                <group>
+                                                    <field name="block_create"/>
+                                                    <field name="block_update"/>
+                                                    <field name="block_archive"/>
+                                                </group>
+                                            </group>
+                                            <group>
+                                                <div class="o_form_label">Restricted Fields</div>
+                                                <div class="text-muted">
+                                                    Add only the fields that AI must not change on this model. If no fields are listed here, only the operation-level restrictions above apply.
+                                                </div>
+                                            </group>
+                                            <field name="blocked_field_ids" context="{'default_policy_id': id}">
+                                                <list editable="bottom">
+                                                    <field name="field_id" domain="[('model_id', '=', parent.model_id)]"/>
+                                                    <field name="field_name" readonly="1"/>
+                                                    <field name="field_label" readonly="1"/>
+                                                    <field name="field_type" readonly="1"/>
+                                                </list>
+                                            </field>
+                                        </sheet>
+                                    </form>
+                                </field>
+                            </div>
+                        </setting>
+                    </block>
+                </app>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="action_sh_ai_write_policy" model="ir.actions.act_window">
+        <field name="name">AI Assistance Settings</field>
+        <field name="res_model">res.config.settings</field>
+        <field name="view_mode">form</field>
+        <field name="view_id" eval="False"/>
+        <field name="res_id" eval="False"/>
+        <field name="context">{'module': 'sh_ai_assistance', 'bin_size': False}</field>
+        <field name="target">current</field>
+    </record>
+</odoo>
