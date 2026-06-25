@@ -1,0 +1,7 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_sh_ai_llm_user,sh.ai.llm.user,model_sh_ai_llm,sh_ai_base.group_sh_ai_user,1,0,0,0
+access_sh_ai_llm_manager,sh.ai.llm.manager,model_sh_ai_llm,sh_ai_base.group_sh_ai_manager,1,1,1,1
+access_sh_ai_llm_base_user,sh.ai.llm.base_user,model_sh_ai_llm,base.group_user,1,0,0,0
+access_sh_ai_openrouter_model_user,sh.ai.openrouter.model.user,model_sh_ai_openrouter_model,sh_ai_base.group_sh_ai_user,1,0,0,0
+access_sh_ai_openrouter_model_manager,sh.ai.openrouter.model.manager,model_sh_ai_openrouter_model,sh_ai_base.group_sh_ai_manager,1,1,1,1
+access_sh_ai_openrouter_model_base_user,sh.ai.openrouter.model.base_user,model_sh_ai_openrouter_model,base.group_user,1,0,0,0
