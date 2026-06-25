@@ -19,3 +19,8 @@ ADD Reasoning effort selection in LLM Providers : Allow user to select reasoning
 
 16.0.4.0.0 (Date : 12 June 2026)
 [NEW] Bulk CRUD Operation Added.
+
+16.0.5.0.0 (Date : 23th June 2026)
+==========
+[IMP] :
+Add Deepseek and Claude Model in LLM.

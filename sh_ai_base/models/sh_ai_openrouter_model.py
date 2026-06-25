@@ -24,6 +24,7 @@ class ShAiOpenrouterModel(models.Model):
     context_length = fields.Integer(string="Context Length")
     active = fields.Boolean(string="Active", default=True)
 
+
     def _extract_provider_name(self, payload):
         name = (payload.get("name") or "").strip()
         if ":" in name:
